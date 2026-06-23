@@ -97,3 +97,21 @@ class TestTrainingConfigs:
         defect_mod = self._import_module("train/train_defect.py", "train_defect")
         assert callable(roi_mod.main)
         assert callable(defect_mod.main)
+
+
+class TestPipelineIntegration:
+    def test_all_augmentations_on_synthetic_image(self):
+        """All scene augmentations handle a structured synthetic image."""
+        img = np.zeros((320, 320, 3), dtype=np.uint8)
+        cv2.rectangle(img, (100, 80), (220, 240), (128, 128, 128), -1)
+        cv2.rectangle(img, (130, 100), (190, 130), (200, 200, 200), -1)
+
+        for aug in [tunnelize, sunlitize, motion_blur, weather_augment]:
+            result = aug(img.copy())
+            assert result.shape == img.shape
+            assert result.dtype == np.uint8
+
+    def test_synthetic_import(self):
+        """Synthetic generation module is importable."""
+        from synthetic.defect_synthesis import generate_missing_defect
+        assert callable(generate_missing_defect)
