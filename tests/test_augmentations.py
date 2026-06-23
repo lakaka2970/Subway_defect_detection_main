@@ -49,3 +49,15 @@ class TestSceneAugmentations:
         original = img.copy()
         weather_augment(img)
         assert np.array_equal(img, original), "Input was modified in-place"
+
+
+class TestContactNetCopyPaste:
+    def test_import(self):
+        from augmentations.contactnet_copy_paste import ContactNetCopyPaste
+        assert ContactNetCopyPaste is not None
+
+    def test_init_defaults(self):
+        from augmentations.contactnet_copy_paste import ContactNetCopyPaste
+        cp = ContactNetCopyPaste(dataset=None, p=0.6, mode="flip")
+        assert cp.p == 0.6
+        assert cp.mode == "flip"
