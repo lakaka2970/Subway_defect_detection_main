@@ -1,0 +1,74 @@
+# Ultralytics YOLO 🚀, AGPL-3.0 license
+# YOLO11m-P2 object detection model with SimAM attention
+#
+# Ground-side (地面端) P2 variant — GPU 1 in dual-GPU ensemble
+# Target: Recall >=90%, Precision >=90%, combined false-report rate <=5%
+#
+# Key difference from standard YOLO11:
+#   Adds P2 detection layer (4x downsampling, 256x256 @ 1024 input)
+#   for enhanced tiny-object detection (bolts, split pins ~8x8 px).
+#
+# Attention design:
+#   P2 branch: SimAM — parameter-free spatial attention
+#   P3 branch: SimAM — parameter-free spatial attention
+#   P4 branch: SimAM — parameter-free spatial attention
+#   P5 branch: ECA   — efficient channel attention
+#   Backbone:  C2PSA (native, retained)
+#
+# This model pairs with yolo11m-EMA-SimAM.yaml for WBF ensemble fusion.
+
+# Parameters
+nc: 18
+scales:
+  m: [0.50, 1.00, 512]
+
+backbone:
+  - [-1, 1, Conv, [64, 3, 2]]          # 0-P1/2
+  - [-1, 1, Conv, [128, 3, 2]]         # 1-P2/4
+  - [-1, 2, C3k2, [256, False, 0.25]]  # 2
+  - [-1, 1, Conv, [256, 3, 2]]         # 3-P3/8
+  - [-1, 2, C3k2, [512, False, 0.25]]  # 4
+  - [-1, 1, Conv, [512, 3, 2]]         # 5-P4/16
+  - [-1, 2, C3k2, [512, True]]         # 6
+  - [-1, 1, Conv, [1024, 3, 2]]        # 7-P5/32
+  - [-1, 2, C3k2, [1024, True]]        # 8
+  - [-1, 1, SPPF, [1024, 5]]           # 9
+  - [-1, 2, C2PSA, [1024]]             # 10
+
+head:
+  # P5 -> P4 up-sample
+  - [-1, 1, nn.Upsample, [None, 2, "nearest"]]   # 11
+  - [[-1, 6], 1, Concat, [1]]                     # 12
+  - [-1, 2, C3k2, [512, False]]                    # 13
+
+  # P4 -> P3 up-sample
+  - [-1, 1, nn.Upsample, [None, 2, "nearest"]]   # 14
+  - [[-1, 4], 1, Concat, [1]]                     # 15
+  - [-1, 2, C3k2, [256, False]]                    # 16 (P3)
+
+  # P3 -> P2 up-sample (NEW: P2 detection scale)
+  - [-1, 1, nn.Upsample, [None, 2, "nearest"]]   # 17
+  - [[-1, 2], 1, Concat, [1]]                     # 18 (cat backbone P2)
+  - [-1, 2, C3k2, [128, False]]                    # 19 (P2/4-xsmall)
+  - [-1, 1, SimAM, []]                              # 20 SimAM (P2, tiny objects)
+
+  # PAN down-sample: P2 -> P3
+  - [-1, 1, Conv, [128, 3, 2]]                    # 21
+  - [[-1, 16], 1, Concat, [1]]                     # 22
+  - [-1, 2, C3k2, [256, False]]                    # 23 (P3)
+  - [-1, 1, SimAM, []]                              # 24 SimAM (P3)
+
+  # PAN down-sample: P3 -> P4
+  - [-1, 1, Conv, [256, 3, 2]]                    # 25
+  - [[-1, 13], 1, Concat, [1]]                     # 26
+  - [-1, 2, C3k2, [512, False]]                    # 27 (P4)
+  - [-1, 1, SimAM, []]                              # 28 SimAM (P4)
+
+  # PAN down-sample: P4 -> P5
+  - [-1, 1, Conv, [512, 3, 2]]                    # 29
+  - [[-1, 10], 1, Concat, [1]]                     # 30
+  - [-1, 2, C3k2, [1024, True]]                    # 31 (P5)
+  - [-1, 1, ECA, []]                                # 32 ECA (P5)
+
+  # Detection heads (4 scales: P2, P3, P4, P5)
+  - [[20, 24, 28, 32], 1, Detect, [nc]]           # 33 Detect(P2, P3, P4, P5)

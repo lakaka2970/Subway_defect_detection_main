@@ -1,0 +1,58 @@
+# Ultralytics YOLO 🚀, AGPL-3.0 license
+# YOLO11s object detection model with EMA + SimAM attention
+#
+# Vehicle-side (车载端) model — single RTX 4090
+# Target: <=10s per 127MP image, Recall >=90%, Precision >=90%
+#
+# Attention design:
+#   P3 branch: EMA  — spatial+channel multi-scale attention
+#   P4 branch: SimAM — parameter-free spatial attention
+#   P5 branch: SimAM — parameter-free spatial attention
+#   Backbone:  C2PSA (native YOLO11, retained)
+
+# Parameters
+nc: 18  # number of defect classes (see defect dictionary)
+scales:
+  s: [0.50, 0.50, 1024]  # depth, width, max_channels
+  m: [0.50, 1.00, 512]   # for m-size variant, change scale parameter
+
+# YOLO11 backbone (unchanged)
+backbone:
+  # [from, repeats, module, args]
+  - [-1, 1, Conv, [64, 3, 2]]          # 0-P1/2
+  - [-1, 1, Conv, [128, 3, 2]]         # 1-P2/4
+  - [-1, 2, C3k2, [256, False, 0.25]]  # 2
+  - [-1, 1, Conv, [256, 3, 2]]         # 3-P3/8
+  - [-1, 2, C3k2, [512, False, 0.25]]  # 4
+  - [-1, 1, Conv, [512, 3, 2]]         # 5-P4/16
+  - [-1, 2, C3k2, [512, True]]         # 6
+  - [-1, 1, Conv, [1024, 3, 2]]        # 7-P5/32
+  - [-1, 2, C3k2, [1024, True]]        # 8
+  - [-1, 1, SPPF, [1024, 5]]           # 9
+  - [-1, 2, C2PSA, [1024]]             # 10 (native C2PSA retained)
+
+# YOLO11 head (with EMA + SimAM)
+head:
+  # FPN up-sample path
+  - [-1, 1, nn.Upsample, [None, 2, "nearest"]]   # 11
+  - [[-1, 6], 1, Concat, [1]]                     # 12 (cat backbone P4)
+  - [-1, 2, C3k2, [512, False]]                    # 13
+
+  - [-1, 1, nn.Upsample, [None, 2, "nearest"]]   # 14
+  - [[-1, 4], 1, Concat, [1]]                     # 15 (cat backbone P3)
+  - [-1, 2, C3k2, [256, False]]                    # 16 (P3/8-small)
+  - [-1, 1, EMA, []]                                # 17 EMA attention (P3)
+
+  # PAN down-sample path
+  - [-1, 1, Conv, [256, 3, 2]]                    # 18
+  - [[-1, 13], 1, Concat, [1]]                     # 19 (cat head P4)
+  - [-1, 2, C3k2, [512, False]]                    # 20 (P4/16-medium)
+  - [-1, 1, SimAM, []]                              # 21 SimAM attention (P4)
+
+  - [-1, 1, Conv, [512, 3, 2]]                    # 22
+  - [[-1, 10], 1, Concat, [1]]                     # 23 (cat head P5)
+  - [-1, 2, C3k2, [1024, True]]                    # 24 (P5/32-large)
+  - [-1, 1, SimAM, []]                              # 25 SimAM attention (P5)
+
+  # Detection heads
+  - [[17, 21, 25], 1, Detect, [nc]]               # 26 Detect(P3, P4, P5)

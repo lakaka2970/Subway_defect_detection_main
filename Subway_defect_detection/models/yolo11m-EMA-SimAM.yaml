@@ -1,0 +1,53 @@
+# Ultralytics YOLO 🚀, AGPL-3.0 license
+# YOLO11m object detection model with EMA + SimAM attention
+#
+# Ground-side (地面端) ECA variant — GPU 0 in dual-GPU ensemble
+# Target: Recall >=90%, Precision >=90%, combined false-report rate <=5%
+#
+# Attention design:
+#   P3 branch: EMA   — spatial+channel multi-scale attention
+#   P4 branch: SimAM — parameter-free spatial attention
+#   P5 branch: ECA   — efficient channel attention (large-scale features)
+#   Backbone:  C2PSA (native YOLO11, retained)
+#
+# This model pairs with yolo11m-P2-SimAM.yaml for WBF ensemble fusion.
+
+# Parameters
+nc: 18
+scales:
+  m: [0.50, 1.00, 512]
+
+backbone:
+  - [-1, 1, Conv, [64, 3, 2]]          # 0-P1/2
+  - [-1, 1, Conv, [128, 3, 2]]         # 1-P2/4
+  - [-1, 2, C3k2, [256, False, 0.25]]  # 2
+  - [-1, 1, Conv, [256, 3, 2]]         # 3-P3/8
+  - [-1, 2, C3k2, [512, False, 0.25]]  # 4
+  - [-1, 1, Conv, [512, 3, 2]]         # 5-P4/16
+  - [-1, 2, C3k2, [512, True]]         # 6
+  - [-1, 1, Conv, [1024, 3, 2]]        # 7-P5/32
+  - [-1, 2, C3k2, [1024, True]]        # 8
+  - [-1, 1, SPPF, [1024, 5]]           # 9
+  - [-1, 2, C2PSA, [1024]]             # 10
+
+head:
+  - [-1, 1, nn.Upsample, [None, 2, "nearest"]]   # 11
+  - [[-1, 6], 1, Concat, [1]]                     # 12
+  - [-1, 2, C3k2, [512, False]]                    # 13
+
+  - [-1, 1, nn.Upsample, [None, 2, "nearest"]]   # 14
+  - [[-1, 4], 1, Concat, [1]]                     # 15
+  - [-1, 2, C3k2, [256, False]]                    # 16 (P3)
+  - [-1, 1, EMA, []]                                # 17 EMA (P3)
+
+  - [-1, 1, Conv, [256, 3, 2]]                    # 18
+  - [[-1, 13], 1, Concat, [1]]                     # 19
+  - [-1, 2, C3k2, [512, False]]                    # 20 (P4)
+  - [-1, 1, SimAM, []]                              # 21 SimAM (P4)
+
+  - [-1, 1, Conv, [512, 3, 2]]                    # 22
+  - [[-1, 10], 1, Concat, [1]]                     # 23
+  - [-1, 2, C3k2, [1024, True]]                    # 24 (P5)
+  - [-1, 1, ECA, []]                                # 25 ECA (P5, channel selection)
+
+  - [[17, 21, 25], 1, Detect, [nc]]               # 26 Detect(P3, P4, P5)
