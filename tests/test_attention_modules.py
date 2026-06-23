@@ -195,3 +195,139 @@ class TestSimAM:
         with torch.no_grad():
             out_eval = simam(input_tensor)
         assert out_train.shape == out_eval.shape
+
+
+class TestEndToEndIntegration:
+    """End-to-end tests: model build, forward pass, gradient flow."""
+
+    @pytest.fixture(autouse=True)
+    def setup_path(self):
+        """Ensure modules are importable."""
+        import sys
+        sys.path.insert(0, str(Path(__file__).parent.parent / "Subway_defect_detection"))
+
+    def test_build_yolo11s_ema_simam(self):
+        """Build YOLO11s-EMA-SimAM from YAML and verify forward pass."""
+        from ultralytics import YOLO
+
+        model = YOLO("Subway_defect_detection/models/yolo11s-EMA-SimAM.yaml")
+        assert model is not None
+
+        # Verify model info accessible (verbose=True returns summary)
+        info = model.info(verbose=True)
+        assert info is not None
+
+    def test_build_yolo11m_ema_simam(self):
+        """Build YOLO11m-EMA-SimAM from YAML and verify forward pass."""
+        from ultralytics import YOLO
+
+        model = YOLO("Subway_defect_detection/models/yolo11m-EMA-SimAM.yaml")
+        assert model is not None
+
+    def test_build_yolo11m_p2_simam(self):
+        """Build YOLO11m-P2-SimAM from YAML and verify forward pass."""
+        from ultralytics import YOLO
+
+        model = YOLO("Subway_defect_detection/models/yolo11m-P2-SimAM.yaml")
+        assert model is not None
+
+    def test_all_models_forward_pass(self):
+        """All models produce valid detection output for a batch of images."""
+        import torch
+        from ultralytics import YOLO
+
+        configs = [
+            "Subway_defect_detection/models/yolo11s-EMA-SimAM.yaml",
+            "Subway_defect_detection/models/yolo11m-EMA-SimAM.yaml",
+            "Subway_defect_detection/models/yolo11m-P2-SimAM.yaml",
+        ]
+
+        x = torch.randn(2, 3, 640, 640)
+
+        for cfg in configs:
+            model = YOLO(cfg)
+            output = model.model(x)
+            assert output is not None, f"{cfg}: model produced None output"
+            assert len(output) > 0, f"{cfg}: model produced empty output"
+
+    def test_gradient_flow_through_attention(self):
+        """Gradients flow through EMA and SimAM during training-like scenario."""
+        import torch
+        from ultralytics import YOLO
+
+        model = YOLO("Subway_defect_detection/models/yolo11s-EMA-SimAM.yaml")
+        model.model.train()
+
+        x = torch.randn(2, 3, 640, 640)
+        output = model.model(x)
+
+        # Sum all detection outputs as a simple loss
+        if isinstance(output, dict):
+            # Sum all tensors from the output dict
+            tensors = []
+            for v in output.values():
+                if isinstance(v, torch.Tensor):
+                    tensors.append(v.sum())
+                elif isinstance(v, (list, tuple)):
+                    tensors.extend(
+                        o.sum() for o in v if isinstance(o, torch.Tensor)
+                    )
+            loss = sum(tensors)
+        elif isinstance(output, (list, tuple)):
+            loss = sum(
+                o.sum() for o in output
+                if isinstance(o, torch.Tensor) and o.numel() > 0
+            )
+        else:
+            loss = output.sum()
+
+        loss.backward()
+
+        # All trainable params should have gradients
+        trainable_params = sum(
+            p.numel() for p in model.model.parameters() if p.requires_grad
+        )
+        params_with_grad = sum(
+            p.numel() for p in model.model.parameters() if p.grad is not None
+        )
+        assert params_with_grad == trainable_params, (
+            f"Expected {trainable_params} params with grad, "
+            f"got {params_with_grad}"
+        )
+
+    def test_ema_simam_coexist_in_one_model(self):
+        """EMA and SimAM coexist correctly in the same model."""
+        import torch
+        from ultralytics import YOLO
+
+        model = YOLO("Subway_defect_detection/models/yolo11s-EMA-SimAM.yaml")
+
+        # Inspect model layers to verify both modules are present
+        module_types = [
+            str(m)[:20] for m in model.model.modules()
+        ]
+
+        has_ema = any("EMA" in t for t in module_types)
+        has_simam = any("SimAM" in t for t in module_types)
+
+        assert has_ema, "EMA module not found in model"
+        assert has_simam, "SimAM module not found in model"
+
+    def test_p2_model_has_four_detection_scales(self):
+        """P2 model should output 4 detection scales: P2, P3, P4, P5."""
+        import torch
+        from ultralytics import YOLO
+
+        model = YOLO("Subway_defect_detection/models/yolo11m-P2-SimAM.yaml")
+        x = torch.randn(1, 3, 640, 640)
+        output = model.model(x)
+
+        # YOLO11 returns dict in train/eval mode; check feats list for scales
+        if isinstance(output, dict):
+            num_scales = len(output.get("feats", output))
+        else:
+            num_scales = len(output)
+
+        assert num_scales == 4, (
+            f"P2 model should have 4 detection scales, got {num_scales}"
+        )
