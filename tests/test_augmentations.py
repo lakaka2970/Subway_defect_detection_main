@@ -61,3 +61,39 @@ class TestContactNetCopyPaste:
         cp = ContactNetCopyPaste(dataset=None, p=0.6, mode="flip")
         assert cp.p == 0.6
         assert cp.mode == "flip"
+
+
+class TestTrainingConfigs:
+    @staticmethod
+    def _import_module(rel_path, mod_name):
+        """Import a module by its path relative to the Subway_defect_detection
+        package, avoiding the root-level ``train.py`` name collision."""
+        import importlib.util
+        pkg_root = Path(__file__).parent.parent / "Subway_defect_detection"
+        spec = importlib.util.spec_from_file_location(
+            mod_name, str(pkg_root / rel_path),
+        )
+        mod = importlib.util.module_from_spec(spec)
+        sys.modules[mod_name] = mod
+        spec.loader.exec_module(mod)
+        return mod
+
+    def test_configs_loadable(self):
+        configs = self._import_module("train/configs.py", "train_configs")
+        for name, cfg in [
+            ("ROI", configs.ROI_TRAIN_CONFIG),
+            ("Warmup", configs.DEFECT_WARMUP_CONFIG),
+            ("Full", configs.DEFECT_FULL_TRAIN_CONFIG),
+            ("Finetune", configs.DEFECT_FINETUNE_CONFIG),
+        ]:
+            assert "epochs" in cfg, f"{name}: missing epochs"
+            assert "imgsz" in cfg, f"{name}: missing imgsz"
+            assert "batch" in cfg, f"{name}: missing batch"
+            assert "optimizer" in cfg, f"{name}: missing optimizer"
+            assert "device" in cfg, f"{name}: missing device"
+
+    def test_scripts_importable(self):
+        roi_mod = self._import_module("train/train_roi.py", "train_roi")
+        defect_mod = self._import_module("train/train_defect.py", "train_defect")
+        assert callable(roi_mod.main)
+        assert callable(defect_mod.main)
