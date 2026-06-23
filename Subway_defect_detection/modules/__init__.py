@@ -1,9 +1,10 @@
+# Ultralytics 🚀 AGPL-3.0 License - https://ultralytics.com/license
 """
 Subway Defect Detection — Custom Neural Network Modules.
 
-This package contains domain-specific modules for the catenary
-defect detection model, including attention mechanisms optimized
-for small object detection in high-resolution infrastructure imagery.
+Domain-specific modules for the catenary defect detection model,
+including attention mechanisms optimized for small object detection
+in high-resolution infrastructure imagery.
 """
 
 from .EMA import EMA

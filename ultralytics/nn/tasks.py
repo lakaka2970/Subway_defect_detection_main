@@ -1666,24 +1666,8 @@ def parse_model(d, ch, verbose=True):
             if m is C2fCIB:
                 legacy = False
 
-        elif m in {CBAM}:
+        elif m in {CBAM, ECA, EMA, SimAM}:
             c2 = ch[f]
-            args = [c2, *args]
-
-        elif m in {ECA, EMA, SimAM}:
-            c2 = ch[f]
-            args = [c2, *args]
-
-        elif m in {CA}:
-            c2=ch[f]
-            args = [c2, *args]
-
-        elif m in {SE}:
-            c2=ch[f]
-            args = [c2, *args]
-
-        elif m in {MLLAttention,ADown}:
-            c2=ch[f]
             args = [c2, *args]
 
         elif m is AIFI:

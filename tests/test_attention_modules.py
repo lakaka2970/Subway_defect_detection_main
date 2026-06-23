@@ -8,6 +8,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent / "Subway_defect_detection")
 import pytest
 import torch
 from modules.EMA import EMA
+from modules.SimAM import SimAM
 
 
 class TestEMA:
@@ -110,21 +111,18 @@ class TestSimAM:
 
     def test_simam_forward_shape(self, input_tensor):
         """SimAM output shape matches input shape."""
-        from modules.SimAM import SimAM
         simam = SimAM()
         output = simam(input_tensor)
         assert output.shape == input_tensor.shape
 
     def test_simam_forward_dtype(self, input_tensor):
         """SimAM output dtype matches input dtype."""
-        from modules.SimAM import SimAM
         simam = SimAM()
         output = simam(input_tensor)
         assert output.dtype == input_tensor.dtype
 
     def test_simam_not_inplace(self, input_tensor):
         """SimAM does not modify input in-place."""
-        from modules.SimAM import SimAM
         original = input_tensor.clone()
         simam = SimAM()
         _ = simam(input_tensor)
@@ -132,14 +130,12 @@ class TestSimAM:
 
     def test_simam_zero_parameters(self):
         """SimAM has zero trainable parameters."""
-        from modules.SimAM import SimAM
         simam = SimAM()
         num_params = sum(p.numel() for p in simam.parameters())
         assert num_params == 0, f"SimAM should have 0 params, has {num_params}"
 
     def test_simam_different_input_sizes(self):
         """SimAM works with various input dimensions."""
-        from modules.SimAM import SimAM
         simam = SimAM()
         for c, h, w in [(64, 32, 32), (128, 64, 64), (256, 128, 128), (512, 16, 16)]:
             x = torch.randn(1, c, h, w)
@@ -152,7 +148,6 @@ class TestSimAM:
         A synthetic input with a bright spot in the center should have
         that spot's relative intensity preserved or enhanced.
         """
-        from modules.SimAM import SimAM
         simam = SimAM()
         x = torch.zeros(1, 8, 32, 32)
         x[:, :, 14:18, 14:18] = 5.0  # bright center
@@ -166,7 +161,6 @@ class TestSimAM:
 
     def test_simam_gradient_flow(self):
         """Gradients flow through SimAM despite zero parameters."""
-        from modules.SimAM import SimAM
         simam = SimAM()
         x = torch.randn(1, 64, 32, 32, requires_grad=True)
         output = simam(x)
@@ -177,7 +171,6 @@ class TestSimAM:
 
     def test_simam_lambda_sensitivity(self):
         """SimAM with different lambda values produces different outputs."""
-        from modules.SimAM import SimAM
         x = torch.randn(2, 16, 32, 32)
         out_small = SimAM(lambda_e=1e-6)(x.clone())
         out_large = SimAM(lambda_e=1e-2)(x.clone())
@@ -187,7 +180,6 @@ class TestSimAM:
 
     def test_simam_train_eval_consistent(self, input_tensor):
         """SimAM produces consistent shapes in train and eval modes."""
-        from modules.SimAM import SimAM
         simam = SimAM()
         simam.train()
         out_train = simam(input_tensor)
