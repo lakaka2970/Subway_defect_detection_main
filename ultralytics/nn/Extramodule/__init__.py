@@ -2,18 +2,31 @@
 """
 Ultralytics Extra Neural Network Modules.
 
-This module provides custom attention and feature extraction modules
-that extend the standard Ultralytics model components.
+Extended module registry that bridges Ultralytics' native module
+resolution (via tasks.py globals()) with custom domain-specific
+modules for subway catenary defect detection.
 """
 
-# Only import from modules that actually exist in this directory
-from .ECA import ECA  # Efficient Channel Attention (implemented)
+import sys
+from pathlib import Path
 
-# CBAM, ChannelAttention, SpatialAttention are defined in ultralytics.nn.modules.conv
-# ADown is defined in ultralytics.nn.modules.block
-# These are imported through the standard module system — do NOT re-import here
-# to avoid circular imports and shadowing.
+# Standard extra modules
+from .ECA import ECA  # Efficient Channel Attention (implemented in Extramodule)
 
-# Additional custom modules (EMA, SimAM) will be bridged in later tasks.
+# Custom attention modules — bridged from the project's modules/ package.
+# These must be importable from ultralytics.nn.Extramodule so that
+# tasks.py's `from .Extramodule import *` exposes them in parse_model's
+# globals() namespace for YAML-based module resolution.
+_project_root = Path(__file__).parent.parent.parent.parent
+_modules_parent = _project_root / "Subway_defect_detection"
+if str(_modules_parent) not in sys.path:
+    sys.path.insert(0, str(_modules_parent))
 
-__all__ = ["ECA"]
+from modules.EMA import EMA       # Efficient Multi-Scale Attention
+from modules.SimAM import SimAM   # Simple Parameter-Free Attention
+
+__all__ = [
+    "ECA",
+    "EMA",
+    "SimAM",
+]
