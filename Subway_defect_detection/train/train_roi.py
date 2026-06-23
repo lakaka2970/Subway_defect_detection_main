@@ -23,20 +23,22 @@ def main():
     parser.add_argument("--epochs", type=int, default=200)
     parser.add_argument("--device", default="0")
     parser.add_argument("--name", default="roi_proposer")
+    parser.add_argument("--pretrained", default=None,
+                        help="COCO pretrained weights (e.g. yolo11n.pt)")
     args = parser.parse_args()
 
     config = {
         **ROI_TRAIN_CONFIG,
         "data": args.data,
-        "model": args.model,
         "epochs": args.epochs,
         "device": args.device,
         "name": args.name,
     }
 
-    model = YOLO(args.model)
-    train_args = {k: v for k, v in config.items() if k != "model"}
-    results = model.train(**train_args)
+    # If pretrained specified, load from weights; otherwise build from yaml
+    model_file = args.pretrained or args.model
+    model = YOLO(model_file)
+    results = model.train(**config)
     print(f"ROI training complete. Best model: {results.save_dir}")
 
 

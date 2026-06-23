@@ -4,6 +4,15 @@ Training hyperparameter presets for each training stage.
 Each dict unpacks into ``YOLO.train(**preset)``.
 """
 
+# ── Stage A: COCO Pretraining (base weights) ────────────────────
+# Not a training stage itself — maps to Ultralytics official weights.
+# Download: https://docs.ultralytics.com/models/yolo11/
+COCO_PRETRAINED = {
+    "yolo11n": "yolo11n.pt",   # 2.6M params — ROI proposer
+    "yolo11s": "yolo11s.pt",   # 9.5M params — vehicle-side
+    "yolo11m": "yolo11m.pt",   # 20.1M params — ground-side
+}
+
 ROI_TRAIN_CONFIG = {
     "data": "datasets/roi/roi_data.yaml",
     "epochs": 200,
