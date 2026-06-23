@@ -1,4 +1,3 @@
-# Ultralytics 🚀 AGPL-3.0 License - https://ultralytics.com/license
 """
 Subway Defect Detection — Custom Neural Network Modules.
 
