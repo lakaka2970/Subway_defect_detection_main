@@ -98,3 +98,15 @@ class TestWBFFusion:
         fusion = WBFFusion()
         result = fusion.fuse([], [])
         assert result == []
+
+
+class TestDeployment:
+    def test_export_module_importable(self):
+        from deployment.export_tensorrt import export_fp16, export_int8
+        assert callable(export_fp16)
+        assert callable(export_int8)
+
+    def test_fastapi_app_creatable(self):
+        from deployment.fastapi_server import app
+        assert app is not None
+        assert app.title == "Subway Defect Detection API"
