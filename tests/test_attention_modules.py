@@ -84,3 +84,17 @@ class TestEMA:
         with torch.no_grad():
             out_eval = ema(input_tensor)
         assert out_train.shape == out_eval.shape
+
+    def test_ema_groups_parameter(self):
+        """EMA works with different group counts."""
+        ema = EMA(channels=256, groups=8)
+        x = torch.randn(1, 256, 32, 32)
+        output = ema(x)
+        assert output.shape == x.shape
+
+    def test_ema_kernel_size_parameter(self):
+        """EMA works with non-default kernel_size."""
+        ema = EMA(channels=128, kernel_size=5)
+        x = torch.randn(1, 128, 32, 32)
+        output = ema(x)
+        assert output.shape == x.shape

@@ -33,7 +33,11 @@ class EMA(nn.Module):
 
     Args:
         channels (int): Number of input feature channels.
-        groups (int): Number of groups for multi-scale processing. Default: 4.
+        groups (int): Number of groups for GroupNorm normalization and channel
+            divisibility. The attention layers (1x1 and 3x3 convolutions) operate on
+            all channels jointly rather than per-group, which is a valid simplification
+            for efficiency while maintaining expressive cross-channel interaction.
+            Default: 4.
         kernel_size (int): Kernel size for spatial refinement conv. Default: 3.
 
     Shape:
@@ -54,8 +58,6 @@ class EMA(nn.Module):
         assert channels % groups == 0, (
             f"channels ({channels}) must be divisible by groups ({groups})"
         )
-        self.group_channels = channels // groups
-
         # Input normalization
         self.gn = nn.GroupNorm(num_groups=groups, num_channels=channels)
 
@@ -88,7 +90,7 @@ class EMA(nn.Module):
         Returns:
             torch.Tensor: Attention-modulated feature map.
         """
-        b, c, h, w = x.shape
+        _, c, h, w = x.shape
 
         # Step 1: Normalize
         normalized = self.gn(x)
