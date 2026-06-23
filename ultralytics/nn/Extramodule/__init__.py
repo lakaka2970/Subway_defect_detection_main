@@ -13,6 +13,12 @@ from pathlib import Path
 # Standard extra modules
 from .ECA import ECA  # Efficient Channel Attention (implemented in Extramodule)
 
+# Attention modules bridged from ultralytics core.
+# CBAM is defined in ultralytics.nn.modules.conv but not imported in tasks.py
+# directly, so we re-export it here to satisfy parse_model's globals() resolution
+# and the elif m in {CBAM} guard.
+from ..modules.conv import CBAM
+
 # Custom attention modules — bridged from the project's modules/ package.
 # These must be importable from ultralytics.nn.Extramodule so that
 # tasks.py's `from .Extramodule import *` exposes them in parse_model's
@@ -25,8 +31,20 @@ if str(_modules_parent) not in sys.path:
 from modules.EMA import EMA       # Efficient Multi-Scale Attention
 from modules.SimAM import SimAM   # Simple Parameter-Free Attention
 
+# Pre-existing parse_model elif guards reference CA, SE, and MLLAttention,
+# but these classes are not yet implemented in the codebase.  Define them
+# as None so the `elif m in {None}` guards are harmless (always False)
+# rather than raising NameError for every non-base module.
+CA = None  # Coordinate Attention — not yet implemented
+SE = None  # Squeeze-and-Excitation — not yet implemented
+MLLAttention = None  # Multi-Level Local Attention — not yet implemented
+
 __all__ = [
+    "CBAM",
+    "CA",
     "ECA",
     "EMA",
+    "MLLAttention",
+    "SE",
     "SimAM",
 ]
