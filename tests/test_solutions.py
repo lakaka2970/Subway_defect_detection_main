@@ -11,10 +11,10 @@ import numpy as np
 import pytest
 
 from tests import MODEL
-from ultralytics import solutions
-from ultralytics.utils import ASSETS_URL, IS_RASPBERRYPI, TORCH_VERSION, checks
-from ultralytics.utils.downloads import safe_download
-from ultralytics.utils.torch_utils import TORCH_2_4
+from subway_yolo import solutions
+from subway_yolo.utils import ASSETS_URL, IS_RASPBERRYPI, TORCH_VERSION, checks
+from subway_yolo.utils.downloads import safe_download
+from subway_yolo.utils.torch_utils import TORCH_2_4
 
 # Predefined argument values
 SHOW = False
@@ -334,7 +334,7 @@ def test_similarity_search_complete(tmp_path):
 
 def test_distance_calculation_process_method():
     """Test DistanceCalculation.process() computes distance between selected boxes."""
-    from ultralytics.solutions.solutions import SolutionResults
+    from subway_yolo.solutions.solutions import SolutionResults
 
     dc = solutions.DistanceCalculation()
     dc.boxes, dc.track_ids, dc.clss, dc.confs = (

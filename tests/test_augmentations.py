@@ -1,12 +1,9 @@
-import sys
-from pathlib import Path
-
-sys.path.insert(0, str(Path(__file__).parent.parent / "Subway_defect_detection"))
-
 import cv2
 import numpy as np
 import pytest
-from augmentations.scene import motion_blur, sunlitize, tunnelize, weather_augment
+from subway_defect.augmentations.scene import (
+    motion_blur, sunlitize, tunnelize, weather_augment,
+)
 
 
 class TestSceneAugmentations:
@@ -53,38 +50,27 @@ class TestSceneAugmentations:
 
 class TestContactNetCopyPaste:
     def test_import(self):
-        from augmentations.contactnet_copy_paste import ContactNetCopyPaste
+        from subway_defect.augmentations.contactnet_copy_paste import ContactNetCopyPaste
         assert ContactNetCopyPaste is not None
 
     def test_init_defaults(self):
-        from augmentations.contactnet_copy_paste import ContactNetCopyPaste
+        from subway_defect.augmentations.contactnet_copy_paste import ContactNetCopyPaste
         cp = ContactNetCopyPaste(dataset=None, p=0.6, mode="flip")
         assert cp.p == 0.6
         assert cp.mode == "flip"
 
 
 class TestTrainingConfigs:
-    @staticmethod
-    def _import_module(rel_path, mod_name):
-        """Import a module by its path relative to the Subway_defect_detection
-        package, avoiding the root-level ``train.py`` name collision."""
-        import importlib.util
-        pkg_root = Path(__file__).parent.parent / "Subway_defect_detection"
-        spec = importlib.util.spec_from_file_location(
-            mod_name, str(pkg_root / rel_path),
-        )
-        mod = importlib.util.module_from_spec(spec)
-        sys.modules[mod_name] = mod
-        spec.loader.exec_module(mod)
-        return mod
-
     def test_configs_loadable(self):
-        configs = self._import_module("train/configs.py", "train_configs")
+        from subway_defect.train.configs import (
+            ROI_TRAIN_CONFIG, DEFECT_WARMUP_CONFIG,
+            DEFECT_FULL_TRAIN_CONFIG, DEFECT_FINETUNE_CONFIG,
+        )
         for name, cfg in [
-            ("ROI", configs.ROI_TRAIN_CONFIG),
-            ("Warmup", configs.DEFECT_WARMUP_CONFIG),
-            ("Full", configs.DEFECT_FULL_TRAIN_CONFIG),
-            ("Finetune", configs.DEFECT_FINETUNE_CONFIG),
+            ("ROI", ROI_TRAIN_CONFIG),
+            ("Warmup", DEFECT_WARMUP_CONFIG),
+            ("Full", DEFECT_FULL_TRAIN_CONFIG),
+            ("Finetune", DEFECT_FINETUNE_CONFIG),
         ]:
             assert "epochs" in cfg, f"{name}: missing epochs"
             assert "imgsz" in cfg, f"{name}: missing imgsz"
@@ -93,10 +79,10 @@ class TestTrainingConfigs:
             assert "device" in cfg, f"{name}: missing device"
 
     def test_scripts_importable(self):
-        roi_mod = self._import_module("train/train_roi.py", "train_roi")
-        defect_mod = self._import_module("train/train_defect.py", "train_defect")
-        assert callable(roi_mod.main)
-        assert callable(defect_mod.main)
+        from subway_defect.train.train_roi import main as roi_main
+        from subway_defect.train.train_defect import main as defect_main
+        assert callable(roi_main)
+        assert callable(defect_main)
 
 
 class TestPipelineIntegration:
@@ -113,5 +99,5 @@ class TestPipelineIntegration:
 
     def test_synthetic_import(self):
         """Synthetic generation module is importable."""
-        from synthetic.defect_synthesis import generate_missing_defect
+        from subway_defect.synthetic.defect_synthesis import generate_missing_defect
         assert callable(generate_missing_defect)

@@ -1,12 +1,7 @@
-import sys
-from pathlib import Path
-
-sys.path.insert(0, str(Path(__file__).parent.parent / "Subway_defect_detection"))
-
 import numpy as np
 import pytest
-from pipeline.slicer import SmartSlicer
-from pipeline.wbf_fusion import WBFFusion
+from subway_defect.pipeline.slicer import SmartSlicer
+from subway_defect.pipeline.wbf_fusion import WBFFusion
 
 
 class TestSmartSlicer:
@@ -79,7 +74,7 @@ class TestWBFFusion:
 
     def test_single_model_false_positive_filtered(self):
         fusion = WBFFusion()
-        # Only model A has a medium-conf detection — should be filtered
+        # Only model A has a medium-conf detection -- should be filtered
         dets_a = [{"box": {"x": 0.7, "y": 0.7, "w": 0.05, "h": 0.05},
                     "confidence": 0.61, "class_id": 0, "class_name": "nut_missing"}]
         dets_b = []
@@ -102,11 +97,11 @@ class TestWBFFusion:
 
 class TestDeployment:
     def test_export_module_importable(self):
-        from deployment.export_tensorrt import export_fp16, export_int8
+        from subway_defect.deployment.export_tensorrt import export_fp16, export_int8
         assert callable(export_fp16)
         assert callable(export_int8)
 
     def test_fastapi_app_creatable(self):
-        from deployment.fastapi_server import app
+        from subway_defect.deployment.fastapi_server import app
         assert app is not None
         assert app.title == "Subway Defect Detection API"

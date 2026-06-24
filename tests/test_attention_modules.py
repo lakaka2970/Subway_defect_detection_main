@@ -1,14 +1,8 @@
 # tests/test_attention_modules.py
-import sys
-from pathlib import Path
-
-# Add project root to path
-sys.path.insert(0, str(Path(__file__).parent.parent / "Subway_defect_detection"))
-
 import pytest
 import torch
-from modules.EMA import EMA
-from modules.SimAM import SimAM
+from subway_defect.modules.EMA import EMA
+from subway_defect.modules.SimAM import SimAM
 
 
 class TestEMA:
@@ -192,17 +186,11 @@ class TestSimAM:
 class TestEndToEndIntegration:
     """End-to-end tests: model build, forward pass, gradient flow."""
 
-    @pytest.fixture(autouse=True)
-    def setup_path(self):
-        """Ensure modules are importable."""
-        import sys
-        sys.path.insert(0, str(Path(__file__).parent.parent / "Subway_defect_detection"))
-
     def test_build_yolo11s_ema_simam(self):
         """Build YOLO11s-EMA-SimAM from YAML and verify forward pass."""
-        from ultralytics import YOLO
+        from subway_yolo import YOLO
 
-        model = YOLO("Subway_defect_detection/models/yolo11s-EMA-SimAM.yaml")
+        model = YOLO("subway_defect/models/yolo11s-EMA-SimAM.yaml")
         assert model is not None
 
         # Verify model info accessible (verbose=True returns summary)
@@ -211,27 +199,27 @@ class TestEndToEndIntegration:
 
     def test_build_yolo11m_ema_simam(self):
         """Build YOLO11m-EMA-SimAM from YAML and verify forward pass."""
-        from ultralytics import YOLO
+        from subway_yolo import YOLO
 
-        model = YOLO("Subway_defect_detection/models/yolo11m-EMA-SimAM.yaml")
+        model = YOLO("subway_defect/models/yolo11m-EMA-SimAM.yaml")
         assert model is not None
 
     def test_build_yolo11m_p2_simam(self):
         """Build YOLO11m-P2-SimAM from YAML and verify forward pass."""
-        from ultralytics import YOLO
+        from subway_yolo import YOLO
 
-        model = YOLO("Subway_defect_detection/models/yolo11m-P2-SimAM.yaml")
+        model = YOLO("subway_defect/models/yolo11m-P2-SimAM.yaml")
         assert model is not None
 
     def test_all_models_forward_pass(self):
         """All models produce valid detection output for a batch of images."""
         import torch
-        from ultralytics import YOLO
+        from subway_yolo import YOLO
 
         configs = [
-            "Subway_defect_detection/models/yolo11s-EMA-SimAM.yaml",
-            "Subway_defect_detection/models/yolo11m-EMA-SimAM.yaml",
-            "Subway_defect_detection/models/yolo11m-P2-SimAM.yaml",
+            "subway_defect/models/yolo11s-EMA-SimAM.yaml",
+            "subway_defect/models/yolo11m-EMA-SimAM.yaml",
+            "subway_defect/models/yolo11m-P2-SimAM.yaml",
         ]
 
         x = torch.randn(2, 3, 640, 640)
@@ -245,9 +233,9 @@ class TestEndToEndIntegration:
     def test_gradient_flow_through_attention(self):
         """Gradients flow through EMA and SimAM during training-like scenario."""
         import torch
-        from ultralytics import YOLO
+        from subway_yolo import YOLO
 
-        model = YOLO("Subway_defect_detection/models/yolo11s-EMA-SimAM.yaml")
+        model = YOLO("subway_defect/models/yolo11s-EMA-SimAM.yaml")
         model.model.train()
 
         x = torch.randn(2, 3, 640, 640)
@@ -290,9 +278,9 @@ class TestEndToEndIntegration:
     def test_ema_simam_coexist_in_one_model(self):
         """EMA and SimAM coexist correctly in the same model."""
         import torch
-        from ultralytics import YOLO
+        from subway_yolo import YOLO
 
-        model = YOLO("Subway_defect_detection/models/yolo11s-EMA-SimAM.yaml")
+        model = YOLO("subway_defect/models/yolo11s-EMA-SimAM.yaml")
 
         # Inspect model layers to verify both modules are present
         module_types = [
@@ -308,9 +296,9 @@ class TestEndToEndIntegration:
     def test_p2_model_has_four_detection_scales(self):
         """P2 model should output 4 detection scales: P2, P3, P4, P5."""
         import torch
-        from ultralytics import YOLO
+        from subway_yolo import YOLO
 
-        model = YOLO("Subway_defect_detection/models/yolo11m-P2-SimAM.yaml")
+        model = YOLO("subway_defect/models/yolo11m-P2-SimAM.yaml")
         x = torch.randn(1, 3, 640, 640)
         output = model.model(x)
 

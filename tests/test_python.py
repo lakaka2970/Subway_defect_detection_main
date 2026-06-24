@@ -13,11 +13,11 @@ import torch
 from PIL import Image
 
 from tests import CFG, MODEL, MODELS, SOURCE, SOURCES_LIST, TASK_MODEL_DATA
-from ultralytics import RTDETR, YOLO
-from ultralytics.cfg import TASK2DATA, TASKS
-from ultralytics.data.build import load_inference_source
-from ultralytics.data.utils import check_det_dataset
-from ultralytics.utils import (
+from subway_yolo import RTDETR, YOLO
+from subway_yolo.cfg import TASK2DATA, TASKS
+from subway_yolo.data.build import load_inference_source
+from subway_yolo.data.utils import check_det_dataset
+from subway_yolo.utils import (
     ARM64,
     ASSETS,
     ASSETS_URL,
@@ -35,8 +35,8 @@ from ultralytics.utils import (
     checks,
     is_github_action_running,
 )
-from ultralytics.utils.downloads import download
-from ultralytics.utils.torch_utils import TORCH_1_11, TORCH_1_13
+from subway_yolo.utils.downloads import download
+from subway_yolo.utils.torch_utils import TORCH_1_11, TORCH_1_13
 
 
 def test_model_forward():
@@ -67,7 +67,7 @@ def test_model_methods():
 
 def test_model_profile():
     """Test profiling of the YOLO model with `profile=True` to assess performance and resource usage."""
-    from ultralytics.nn.tasks import DetectionModel
+    from subway_yolo.nn.tasks import DetectionModel
 
     model = DetectionModel()  # build model
     im = torch.randn(1, 3, 64, 64)  # requires min imgsz=64
@@ -349,11 +349,11 @@ def test_labels_and_crops():
 @pytest.mark.skipif(not ONLINE, reason="environment is offline")
 def test_data_utils(tmp_path):
     """Test data utility functions including dataset stats, auto-splitting, and zip archiving."""
-    from ultralytics.data.split import autosplit
-    from ultralytics.data.utils import HUBDatasetStats
-    from ultralytics.utils.downloads import zip_directory
+    from subway_yolo.data.split import autosplit
+    from subway_yolo.data.utils import HUBDatasetStats
+    from subway_yolo.utils.downloads import zip_directory
 
-    # from ultralytics.utils.files import WorkingDirectory
+    # from subway_yolo.utils.files import WorkingDirectory
     # with WorkingDirectory(ROOT.parent / 'tests'):
 
     for task in TASKS:
@@ -370,7 +370,7 @@ def test_data_utils(tmp_path):
 @pytest.mark.skipif(not ONLINE, reason="environment is offline")
 def test_data_converter(tmp_path):
     """Test dataset conversion functions from COCO to YOLO format and class mappings."""
-    from ultralytics.data.converter import coco80_to_coco91_class, convert_coco
+    from subway_yolo.data.converter import coco80_to_coco91_class, convert_coco
 
     download(f"{ASSETS_URL}/instances_val2017.json", dir=tmp_path)
     convert_coco(
@@ -381,7 +381,7 @@ def test_data_converter(tmp_path):
 
 def test_data_annotator(tmp_path):
     """Test automatic annotation of data using detection and segmentation models."""
-    from ultralytics.data.annotator import auto_annotate
+    from subway_yolo.data.annotator import auto_annotate
 
     auto_annotate(
         ASSETS,
@@ -393,7 +393,7 @@ def test_data_annotator(tmp_path):
 
 def test_events():
     """Test event sending functionality."""
-    from ultralytics.utils.events import Events
+    from subway_yolo.utils.events import Events
 
     events = Events()
     events.enabled = True
@@ -404,7 +404,7 @@ def test_events():
 
 def test_cfg_init():
     """Test configuration initialization utilities from the 'ultralytics.cfg' module."""
-    from ultralytics.cfg import check_dict_alignment, copy_default_cfg, smart_value
+    from subway_yolo.cfg import check_dict_alignment, copy_default_cfg, smart_value
 
     with contextlib.suppress(SyntaxError):
         check_dict_alignment({"a": 1}, {"b": 2})
@@ -454,7 +454,7 @@ def test_cfg_init():
 
 def test_utils_init():
     """Test initialization utilities in the Ultralytics library."""
-    from ultralytics.utils import get_ubuntu_version, is_github_action_running
+    from subway_yolo.utils import get_ubuntu_version, is_github_action_running
 
     get_ubuntu_version()
     is_github_action_running()
@@ -473,15 +473,15 @@ def test_utils_checks():
 @pytest.mark.skipif(WINDOWS, reason="Windows profiling is extremely slow (cause unknown)")
 def test_utils_benchmarks():
     """Benchmark model performance using 'ProfileModels' from 'ultralytics.utils.benchmarks'."""
-    from ultralytics.utils.benchmarks import ProfileModels
+    from subway_yolo.utils.benchmarks import ProfileModels
 
     ProfileModels(["yolo26n.yaml"], imgsz=32, min_time=1, num_timed_runs=3, num_warmup_runs=1).run()
 
 
 def test_utils_torchutils():
     """Test Torch utility functions including profiling and FLOP calculations."""
-    from ultralytics.nn.modules.conv import Conv
-    from ultralytics.utils.torch_utils import get_flops_with_torch_profiler, profile_ops, time_sync
+    from subway_yolo.nn.modules.conv import Conv
+    from subway_yolo.utils.torch_utils import get_flops_with_torch_profiler, profile_ops, time_sync
 
     x = torch.randn(1, 64, 20, 20)
     m = Conv(64, 64, k=1, s=2)
@@ -493,7 +493,7 @@ def test_utils_torchutils():
 
 def test_utils_ops():
     """Test utility operations for coordinate transformations and normalizations."""
-    from ultralytics.utils.ops import (
+    from subway_yolo.utils.ops import (
         ltwh2xywh,
         ltwh2xyxy,
         make_divisible,
@@ -522,7 +522,7 @@ def test_utils_ops():
 
 def test_utils_files(tmp_path):
     """Test file handling utilities including file age, date, and paths with spaces."""
-    from ultralytics.utils.files import file_age, file_date, get_latest_run, spaces_in_path
+    from subway_yolo.utils.files import file_age, file_date, get_latest_run, spaces_in_path
 
     file_age(SOURCE)
     file_date(SOURCE)
@@ -539,7 +539,7 @@ def test_utils_patches_torch_save(tmp_path):
     """Test torch_save backoff when _torch_save raises RuntimeError."""
     from unittest.mock import MagicMock, patch
 
-    from ultralytics.utils.patches import torch_save
+    from subway_yolo.utils.patches import torch_save
 
     mock = MagicMock(side_effect=RuntimeError)
 
@@ -552,7 +552,7 @@ def test_utils_patches_torch_save(tmp_path):
 
 def test_nn_modules_conv():
     """Test Convolutional Neural Network modules including CBAM, Conv2, and ConvTranspose."""
-    from ultralytics.nn.modules.conv import CBAM, Conv2, ConvTranspose, DWConvTranspose2d, Focus
+    from subway_yolo.nn.modules.conv import CBAM, Conv2, ConvTranspose, DWConvTranspose2d, Focus
 
     c1, c2 = 8, 16  # input and output channels
     x = torch.zeros(4, c1, 10, 10)  # BCHW
@@ -571,7 +571,7 @@ def test_nn_modules_conv():
 
 def test_nn_modules_block():
     """Test various neural network block modules."""
-    from ultralytics.nn.modules.block import C1, C3TR, BottleneckCSP, C3Ghost, C3x
+    from subway_yolo.nn.modules.block import C1, C3TR, BottleneckCSP, C3Ghost, C3x
 
     c1, c2 = 8, 16  # input and output channels
     x = torch.zeros(4, c1, 10, 10)  # BCHW
@@ -587,8 +587,8 @@ def test_nn_modules_block():
 @pytest.mark.skipif(not ONLINE, reason="environment is offline")
 def test_hub():
     """Test Ultralytics HUB functionalities."""
-    from ultralytics.hub import export_fmts_hub, logout
-    from ultralytics.hub.utils import smart_request
+    from subway_yolo.hub import export_fmts_hub, logout
+    from subway_yolo.hub.utils import smart_request
 
     export_fmts_hub()
     logout()
@@ -612,7 +612,7 @@ def image():
 )
 def test_classify_transforms_train(image, auto_augment, erasing, force_color_jitter):
     """Test classification transforms during training with various augmentations."""
-    from ultralytics.data.augment import classify_augmentations
+    from subway_yolo.data.augment import classify_augmentations
 
     transform = classify_augmentations(
         size=224,
@@ -694,7 +694,7 @@ def test_yolo_world():
     )
 
     # test WorWorldTrainerFromScratch
-    from ultralytics.models.yolo.world.train_world import WorldTrainerFromScratch
+    from subway_yolo.models.yolo.world.train_world import WorldTrainerFromScratch
 
     model = YOLO("yolov8s-worldv2.yaml")  # no YOLO11n-world model yet
     model.train(
@@ -721,8 +721,8 @@ def test_yoloe(tmp_path):
     model.set_classes(["person", "bus"])
     model(SOURCE, conf=0.01)
 
-    from ultralytics import YOLOE
-    from ultralytics.models.yolo.yoloe import YOLOEVPSegPredictor
+    from subway_yolo import YOLOE
+    from subway_yolo.models.yolo.yoloe import YOLOEVPSegPredictor
 
     # visual-prompts
     visuals = dict(
@@ -743,7 +743,7 @@ def test_yoloe(tmp_path):
     model.val(data="coco128-seg.yaml", load_vp=True, imgsz=32)
 
     # Train, fine-tune
-    from ultralytics.models.yolo.yoloe import YOLOEPESegTrainer, YOLOESegTrainerFromScratch
+    from subway_yolo.models.yolo.yoloe import YOLOEPESegTrainer, YOLOESegTrainerFromScratch
 
     model = YOLOE("yoloe-11s-seg.pt")
     model.train(

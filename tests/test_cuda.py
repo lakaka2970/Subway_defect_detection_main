@@ -8,12 +8,12 @@ import pytest
 import torch
 
 from tests import CUDA_DEVICE_COUNT, CUDA_IS_AVAILABLE, MODEL, SOURCE
-from ultralytics import YOLO
-from ultralytics.cfg import TASK2DATA, TASK2MODEL, TASKS
-from ultralytics.utils import ASSETS, IS_JETSON, WEIGHTS_DIR
-from ultralytics.utils.autodevice import GPUInfo
-from ultralytics.utils.checks import check_amp, check_tensorrt
-from ultralytics.utils.torch_utils import TORCH_1_13
+from subway_yolo import YOLO
+from subway_yolo.cfg import TASK2DATA, TASK2MODEL, TASKS
+from subway_yolo.utils import ASSETS, IS_JETSON, WEIGHTS_DIR
+from subway_yolo.utils.autodevice import GPUInfo
+from subway_yolo.utils.checks import check_amp, check_tensorrt
+from subway_yolo.utils.torch_utils import TORCH_1_13
 
 # Try to find idle devices if CUDA is available
 DEVICES = []
@@ -165,7 +165,7 @@ def test_predict_multiple_devices():
 @pytest.mark.skipif(not DEVICES, reason="No CUDA devices available")
 def test_autobatch():
     """Check optimal batch size for YOLO model training using autobatch utility."""
-    from ultralytics.utils.autobatch import check_train_batch_size
+    from subway_yolo.utils.autobatch import check_train_batch_size
 
     check_train_batch_size(YOLO(MODEL).model.to(f"cuda:{DEVICES[0]}"), imgsz=128, amp=True)
 
@@ -174,7 +174,7 @@ def test_autobatch():
 @pytest.mark.skipif(not DEVICES, reason="No CUDA devices available")
 def test_utils_benchmarks():
     """Profile YOLO models for performance benchmarks."""
-    from ultralytics.utils.benchmarks import ProfileModels
+    from subway_yolo.utils.benchmarks import ProfileModels
 
     # Pre-export a dynamic engine model to use dynamic inference
     YOLO(MODEL).export(format="engine", imgsz=32, dynamic=True, batch=1, device=DEVICES[0])
@@ -192,8 +192,8 @@ def test_utils_benchmarks():
 @pytest.mark.skipif(not DEVICES, reason="No CUDA devices available")
 def test_predict_sam():
     """Test SAM model predictions using different prompts."""
-    from ultralytics import SAM
-    from ultralytics.models.sam import Predictor as SAMPredictor
+    from subway_yolo import SAM
+    from subway_yolo.models.sam import Predictor as SAMPredictor
 
     model = SAM(WEIGHTS_DIR / "sam2.1_b.pt")
     model.info()

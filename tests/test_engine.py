@@ -6,11 +6,11 @@ from unittest import mock
 import torch
 
 from tests import MODEL, SOURCE
-from ultralytics import YOLO
-from ultralytics.cfg import get_cfg
-from ultralytics.engine.exporter import Exporter
-from ultralytics.models.yolo import classify, detect, segment
-from ultralytics.utils import ASSETS, DEFAULT_CFG, WEIGHTS_DIR
+from subway_yolo import YOLO
+from subway_yolo.cfg import get_cfg
+from subway_yolo.engine.exporter import Exporter
+from subway_yolo.models.yolo import classify, detect, segment
+from subway_yolo.utils import ASSETS, DEFAULT_CFG, WEIGHTS_DIR
 
 
 def test_func(*args, **kwargs):

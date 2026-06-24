@@ -17,11 +17,11 @@ else
     source activate subway
 fi
 
-# Install PyTorch (CUDA 12.1 — matches AutoDL default)
+# Install PyTorch (CUDA 12.1 -- matches AutoDL default)
 pip install torch torchvision --index-url https://download.pytorch.org/whl/cu121
 
-# Install Ultralytics and dependencies
-pip install ultralytics opencv-python-headless numpy pytest
+# Install the project in editable mode (pulls in all dependencies)
+pip install -e .
 
 # Verify GPU
 python -c "
@@ -47,5 +47,5 @@ echo ""
 echo "Next steps:"
 echo "  1. Upload datasets to $AUTODL_DATA/datasets/"
 echo "  2. Download COCO pretrained weights:"
-echo "     wget https://github.com/ultralytics/assets/releases/download/v8.3.0/yolo11s.pt"
-echo "  3. Train: python train/train_defect.py --data $AUTODL_DATA/datasets/defects/defect_data.yaml --coco_pretrain"
+echo "     wget https://github.com/ultralytics/assets/releases/download/v8.4.0/yolo11s.pt"
+echo "  3. Train: train-defect --data $AUTODL_DATA/datasets/defects/defect_data.yaml --coco_pretrain"
