@@ -1,277 +1,385 @@
-<div align="center">
-  <p>
-    <a href="https://platform.ultralytics.com/?utm_source=github&utm_medium=referral&utm_campaign=platform_launch&utm_content=banner&utm_term=ultralytics_github" target="_blank">
-      <img width="100%" src="https://raw.githubusercontent.com/ultralytics/assets/main/yolov8/banner-yolov8.png" alt="Ultralytics YOLO banner"></a>
-  </p>
+# 地铁接触网缺陷检测系统
 
-[中文](https://docs.ultralytics.com/zh/) | [한국어](https://docs.ultralytics.com/ko/) | [日本語](https://docs.ultralytics.com/ja/) | [Русский](https://docs.ultralytics.com/ru/) | [Deutsch](https://docs.ultralytics.com/de/) | [Français](https://docs.ultralytics.com/fr/) | [Español](https://docs.ultralytics.com/es) | [Português](https://docs.ultralytics.com/pt/) | [Türkçe](https://docs.ultralytics.com/tr/) | [Tiếng Việt](https://docs.ultralytics.com/vi/) | [العربية](https://docs.ultralytics.com/ar/) <br>
+基于 YOLO11 + EMA/SimAM 注意力的两阶段 AI 缺陷检测系统，用于福州地铁接触网超高清图像（1.27 亿像素）的智能化分析。
 
-<div>
-    <a href="https://github.com/ultralytics/ultralytics/actions/workflows/ci.yml"><img src="https://github.com/ultralytics/ultralytics/actions/workflows/ci.yml/badge.svg" alt="Ultralytics CI"></a>
-    <a href="https://clickpy.clickhouse.com/dashboard/ultralytics"><img src="https://static.pepy.tech/badge/ultralytics" alt="Ultralytics Downloads"></a>
-    <a href="https://discord.com/invite/ultralytics"><img alt="Ultralytics Discord" src="https://img.shields.io/discord/1089800235347353640?logo=discord&logoColor=white&label=Discord&color=blue"></a>
-    <a href="https://community.ultralytics.com/"><img alt="Ultralytics Forums" src="https://img.shields.io/discourse/users?server=https%3A%2F%2Fcommunity.ultralytics.com&logo=discourse&label=Forums&color=blue"></a>
-    <a href="https://www.reddit.com/r/ultralytics/"><img alt="Ultralytics Reddit" src="https://img.shields.io/reddit/subreddit-subscribers/ultralytics?style=flat&logo=reddit&logoColor=white&label=Reddit&color=blue"></a>
-    <br>
-    <a href="https://console.paperspace.com/github/ultralytics/ultralytics"><img src="https://assets.paperspace.io/img/gradient-badge.svg" alt="Run Ultralytics on Gradient"></a>
-    <a href="https://colab.research.google.com/github/ultralytics/ultralytics/blob/main/examples/tutorial.ipynb"><img src="https://colab.research.google.com/assets/colab-badge.svg" alt="Open Ultralytics In Colab"></a>
-    <a href="https://www.kaggle.com/models/ultralytics/yolo26"><img src="https://kaggle.com/static/images/open-in-kaggle.svg" alt="Open Ultralytics In Kaggle"></a>
-    <a href="https://mybinder.org/v2/gh/ultralytics/ultralytics/HEAD?labpath=examples%2Ftutorial.ipynb"><img src="https://mybinder.org/badge_logo.svg" alt="Open Ultralytics In Binder"></a>
-</div>
-</div>
-<br>
+> 完整规格说明见 [SPECIFICATION.md](SPECIFICATION.md)
 
-[Ultralytics](https://www.ultralytics.com/) creates cutting-edge, state-of-the-art (SOTA) [YOLO models](https://www.ultralytics.com/yolo) built on years of foundational research in computer vision and AI. Constantly updated for performance and flexibility, our models are **fast**, **accurate**, and **easy to use**. They excel at [object detection](https://docs.ultralytics.com/tasks/detect/), [tracking](https://docs.ultralytics.com/modes/track/), [instance segmentation](https://docs.ultralytics.com/tasks/segment/), [image classification](https://docs.ultralytics.com/tasks/classify/), and [pose estimation](https://docs.ultralytics.com/tasks/pose/) tasks.
+## 项目概述
 
-Find detailed documentation in the [Ultralytics Docs](https://docs.ultralytics.com/). Get support via [GitHub Issues](https://github.com/ultralytics/ultralytics/issues/new/choose). Join discussions on [Discord](https://discord.com/invite/ultralytics), [Reddit](https://www.reddit.com/r/ultralytics/), and the [Ultralytics Community Forums](https://community.ultralytics.com/)!
+本系统通过车载高速相机采集的接触网图像，自动识别螺栓松动/脱落、开口销缺失、绝缘子破损等 18 类缺陷，替代人工巡检。系统支持**车载端**（单 RTX 4090，离线运行）和**地面端**（双 RTX 4090，WBF 融合）两种部署形态。
 
-Request an Enterprise License for commercial use at [Ultralytics Licensing](https://www.ultralytics.com/license).
+### 核心指标
 
-<a href="https://platform.ultralytics.com/ultralytics/yolo26" target="_blank">
-  <img width="100%" src="https://raw.githubusercontent.com/ultralytics/assets/refs/heads/main/yolo/performance-comparison.png" alt="YOLO26 performance plots">
-</a>
+| 指标 | 车载端 | 地面端 |
+| --- | --- | --- |
+| GPU 配置 | 单卡 RTX 4090 | 双卡 RTX 4090 |
+| 输入规格 | 1.27 亿像素（~13000×9800） | 1.27 亿像素 |
+| 单张推理耗时 | ≤ 10 秒 | ≤ 10 秒 |
+| 检出率 Recall | ≥ 90% | ≥ 90% |
+| 准确率 Precision | ≥ 90% | ≥ 90% |
+| 模型加载延迟 | ≤ 1 秒 | ≤ 1 秒 |
+| 提报率 | — | ≤ 5% |
+| 部署形态 | 完全离线（工控机） | 内网服务 |
 
-<div align="center">
-  <a href="https://github.com/ultralytics"><img src="https://github.com/ultralytics/assets/raw/main/social/logo-social-github.png" width="2%" alt="Ultralytics GitHub"></a>
-  <img src="https://github.com/ultralytics/assets/raw/main/social/logo-transparent.png" width="2%" alt="space">
-  <a href="https://www.linkedin.com/company/ultralytics/"><img src="https://github.com/ultralytics/assets/raw/main/social/logo-social-linkedin.png" width="2%" alt="Ultralytics LinkedIn"></a>
-  <img src="https://github.com/ultralytics/assets/raw/main/social/logo-transparent.png" width="2%" alt="space">
-  <a href="https://twitter.com/ultralytics"><img src="https://github.com/ultralytics/assets/raw/main/social/logo-social-twitter.png" width="2%" alt="Ultralytics Twitter"></a>
-  <img src="https://github.com/ultralytics/assets/raw/main/social/logo-transparent.png" width="2%" alt="space">
-  <a href="https://www.youtube.com/ultralytics?sub_confirmation=1"><img src="https://github.com/ultralytics/assets/raw/main/social/logo-social-youtube.png" width="2%" alt="Ultralytics YouTube"></a>
-  <img src="https://github.com/ultralytics/assets/raw/main/social/logo-transparent.png" width="2%" alt="space">
-  <a href="https://www.tiktok.com/@ultralytics"><img src="https://github.com/ultralytics/assets/raw/main/social/logo-social-tiktok.png" width="2%" alt="Ultralytics TikTok"></a>
-  <img src="https://github.com/ultralytics/assets/raw/main/social/logo-transparent.png" width="2%" alt="space">
-  <a href="https://ultralytics.com/bilibili"><img src="https://github.com/ultralytics/assets/raw/main/social/logo-social-bilibili.png" width="2%" alt="Ultralytics BiliBili"></a>
-  <img src="https://github.com/ultralytics/assets/raw/main/social/logo-transparent.png" width="2%" alt="space">
-  <a href="https://discord.com/invite/ultralytics"><img src="https://github.com/ultralytics/assets/raw/main/social/logo-social-discord.png" width="2%" alt="Ultralytics Discord"></a>
-</div>
+## 项目结构
 
-## 📄 Documentation
+```
+Subway_defect_detection_main/
+├── subway_defect/                    # 项目主包
+│   ├── modules/                      # EMA、SimAM 注意力模块
+│   ├── models/                       # 模型 YAML 配置文件（3 个变体）
+│   ├── pipeline/                     # 推理管道（切片器、两阶段、WBF 融合）
+│   ├── train/                        # 训练模块（超参数预设、CLI 脚本）
+│   ├── augmentations/                # 数据增强（场景模拟、CopyPaste）
+│   ├── deployment/                   # 部署（TensorRT 导出、FastAPI 服务）
+│   ├── synthetic/                    # 合成数据生成（Inpainting）
+│   └── docs/                         # 设计文档 + 前后端接口规范
+│       ├── 地铁接触网缺陷检测AI算法设计文档.md
+│       ├── plans/                    # 实现计划
+│       └── 开发方案(5.30)/            # 系统开发方案
+├── subway_yolo/                      # Vendored YOLO 框架（已精简）
+│   ├── engine/                       # Model、Trainer、Predictor、Validator、Exporter
+│   ├── nn/                           # tasks、modules、Extramodule（EMA/SimAM 桥接）
+│   ├── models/yolo/                  # 仅 detect + classify
+│   ├── data/                         # 数据加载、增强
+│   ├── cfg/                          # 配置 + YOLO11 模型定义
+│   ├── utils/                        # 核心工具函数
+│   └── optim/                        # 优化器
+├── tests/                            # 测试套件
+│   ├── test_attention_modules.py     # EMA/SimAM 单元 + 模型集成
+│   ├── test_augmentations.py         # 增强管道 + 训练配置
+│   └── test_pipeline.py              # 切片器 + WBF 融合 + 部署
+├── scripts/
+│   └── setup_autodl.sh               # AutoDL 云平台环境配置
+├── pyproject.toml                    # 项目配置（包名 subway_defect）
+├── README.md                         # 本文件
+├── SPECIFICATION.md                  # 完整规格说明书
+└── LICENSE                           # AGPL-3.0
+```
 
-See below for quickstart installation and usage examples. For comprehensive guidance on training, validation, prediction, and deployment, refer to our full [Ultralytics Docs](https://docs.ultralytics.com/).
+## 环境要求
 
-<details open>
-<summary>Install</summary>
+- **Python**: ≥ 3.10
+- **PyTorch**: ≥ 2.0（推荐 CUDA 12.1）
+- **GPU**: NVIDIA GPU，VRAM ≥ 8 GB（推荐 RTX 4090）
+- **操作系统**: Windows 10/11 Pro（车载端/地面端）/ Linux（训练端）
 
-Install the `ultralytics` package, including all [requirements](https://github.com/ultralytics/ultralytics/blob/main/pyproject.toml), in a [**Python>=3.8**](https://www.python.org/) environment with [**PyTorch>=1.8**](https://pytorch.org/get-started/locally/).
+## 快速开始
 
-[![PyPI - Version](https://img.shields.io/pypi/v/ultralytics?logo=pypi&logoColor=white)](https://pypi.org/project/ultralytics/) [![Ultralytics Downloads](https://static.pepy.tech/badge/ultralytics)](https://clickpy.clickhouse.com/dashboard/ultralytics) [![PyPI - Python Version](https://img.shields.io/pypi/pyversions/ultralytics?logo=python&logoColor=gold)](https://pypi.org/project/ultralytics/)
+### 1. 安装
 
 ```bash
-pip install ultralytics
+# 克隆仓库
+git clone <repo-url>
+cd Subway_defect_detection_main
+
+# 安装（可编辑模式，会同时安装 subway_defect 和 subway_yolo 两个包）
+pip install -e .
+
+# 验证安装
+python -c "from subway_defect.modules.EMA import EMA; from subway_defect.modules.SimAM import SimAM; print('OK')"
 ```
 
-For alternative installation methods, including [Conda](https://anaconda.org/conda-forge/ultralytics), [Docker](https://hub.docker.com/r/ultralytics/ultralytics), and building from source via Git, please consult the [Quickstart Guide](https://docs.ultralytics.com/quickstart/).
-
-[![Conda Version](https://img.shields.io/conda/vn/conda-forge/ultralytics?logo=condaforge)](https://anaconda.org/conda-forge/ultralytics) [![Docker Image Version](https://img.shields.io/docker/v/ultralytics/ultralytics?sort=semver&logo=docker)](https://hub.docker.com/r/ultralytics/ultralytics) [![Ultralytics Docker Pulls](https://img.shields.io/docker/pulls/ultralytics/ultralytics?logo=docker)](https://hub.docker.com/r/ultralytics/ultralytics)
-
-</details>
-
-<details open>
-<summary>Usage</summary>
-
-### CLI
-
-You can use Ultralytics YOLO directly from the Command Line Interface (CLI) with the `yolo` command:
+### 2. 验证模型构建
 
 ```bash
-# Predict using a pretrained YOLO model (e.g., YOLO26n) on an image
-yolo predict model=yolo26n.pt source='https://ultralytics.com/images/bus.jpg'
+# 验证三个模型 YAML 均可正常构建
+python -c "
+from subway_yolo import YOLO
+for cfg in ['subway_defect/models/yolo11s-EMA-SimAM.yaml',
+            'subway_defect/models/yolo11m-EMA-SimAM.yaml',
+            'subway_defect/models/yolo11m-P2-SimAM.yaml']:
+    model = YOLO(cfg)
+    print(f'{cfg}: {sum(p.numel() for p in model.model.parameters()):,} params')
+"
 ```
 
-The `yolo` command supports various tasks and modes, accepting additional arguments like `imgsz=640`. Explore the YOLO [CLI Docs](https://docs.ultralytics.com/usage/cli/) for more examples.
+### 3. 运行测试
 
-### Python
+```bash
+# 运行全部项目测试
+pytest tests/ -v
 
-Ultralytics YOLO can also be integrated directly into your Python projects. It accepts the same [configuration arguments](https://docs.ultralytics.com/usage/cfg/) as the CLI:
+# 按模块运行
+pytest tests/test_attention_modules.py -v   # EMA/SimAM 模块 + 模型集成
+pytest tests/test_augmentations.py -v       # 增强管道 + 配置
+pytest tests/test_pipeline.py -v            # 切片器 + WBF + 部署
 
-```python
-from ultralytics import YOLO
-
-# Load a pretrained YOLO26n model
-model = YOLO("yolo26n.pt")
-
-# Train the model on the COCO8 dataset for 100 epochs
-train_results = model.train(
-    data="coco8.yaml",  # Path to dataset configuration file
-    epochs=100,  # Number of training epochs
-    imgsz=640,  # Image size for training
-    device="cpu",  # Device to run on (e.g., 'cpu', 0, [0,1,2,3])
-)
-
-# Evaluate the model's performance on the validation set
-metrics = model.val()
-
-# Perform object detection on an image
-results = model("path/to/image.jpg")  # Predict on an image
-results[0].show()  # Display results
-
-# Export the model to ONNX format for deployment
-path = model.export(format="onnx")  # Returns the path to the exported model
+# 使用 --slow 标志运行慢速集成测试
+pytest tests/ --slow -v
 ```
 
-Discover more examples in the YOLO [Python Docs](https://docs.ultralytics.com/usage/python/).
+## 架构设计
 
-</details>
+### 两级级联推理管道
 
-## ✨ Models
+```
+127MP 原始图像 (13000×9800)
+       │
+       ▼
+┌─────────────────────┐
+│ Stage 1: ROI 提案器  │  ← 降采样 1/8 (~1625×1225)
+│ YOLO11n-ROI          │     检测结构区域（非缺陷）
+│ 4 类结构区域          │     切片: 640×640 × 9 片
+│ Recall ≥ 99%（硬约束）│     耗时: ~27ms
+└──────────┬──────────┘
+           │
+           ▼
+┌─────────────────────┐
+│ ROI 映射 & 去重      │  ← 框映射回原始分辨率 + 边缘扩展
+└──────────┬──────────┘
+           │
+           ▼
+┌─────────────────────┐
+│ Stage 2: 缺陷检测    │  ← 仅对 ROI 区域做 1024 切片
+│ YOLO11s/m-EMA-SimAM │     切片数: 60~90（降低 50-67%）
+│ 18 类缺陷            │     耗时: ~2s
+└──────────┬──────────┘
+           │
+           ▼
+┌─────────────────────┐
+│ WBF 融合 / 全局 NMS  │  ← 跨切片去重 + 坐标映射
+└─────────────────────┘
 
-Ultralytics supports a wide range of YOLO models, from early versions like [YOLOv3](https://docs.ultralytics.com/models/yolov3/) to the latest [YOLO26](https://docs.ultralytics.com/models/yolo26/). The tables below showcase YOLO26 models pretrained on the [COCO](https://docs.ultralytics.com/datasets/detect/coco/) dataset for [Detection](https://docs.ultralytics.com/tasks/detect/), [Segmentation](https://docs.ultralytics.com/tasks/segment/), and [Pose Estimation](https://docs.ultralytics.com/tasks/pose/). Additionally, [Classification](https://docs.ultralytics.com/tasks/classify/) models pretrained on the [ImageNet](https://docs.ultralytics.com/datasets/classify/imagenet/) dataset are available. [Tracking](https://docs.ultralytics.com/modes/track/) mode is compatible with all Detection, Segmentation, and Pose models. All [Models](https://docs.ultralytics.com/models/) are automatically downloaded from the latest Ultralytics [release](https://github.com/ultralytics/assets/releases) upon first use.
+总耗时: 27ms + 500ms + 2000ms + 200ms + 2500ms(解码) ≈ 5.2s
+```
 
-<a href="https://docs.ultralytics.com/tasks/" target="_blank">
-    <img width="100%" src="https://github.com/ultralytics/docs/releases/download/0/ultralytics-yolov8-tasks-banner.avif" alt="Ultralytics YOLO supported tasks">
-</a>
-<br>
-<br>
+### 模型注意力改造
 
-<details open><summary>Detection (COCO)</summary>
+| 位置 | 模块 | 参数量 | 延迟 | 论文 |
+| --- | --- | --- | --- | --- |
+| P3 检测分支 | **EMA** | ~200 | +0.4ms | ICASSP 2023 |
+| P4/P5 检测分支 | **SimAM** | **0** | +0.1ms | ICML 2021 |
+| Backbone 末端 | C2PSA（保留） | — | — | YOLO11 原生 |
 
-Explore the [Detection Docs](https://docs.ultralytics.com/tasks/detect/) for usage examples. These models are trained on the [COCO dataset](https://cocodataset.org/), featuring 80 object classes.
+- **EMA（Efficient Multi-Scale Attention）**：X/Y 双方向池化，保留空间位置信息，增强对小目标（螺栓、开口销 ~8×8 px）的定位能力
+- **SimAM（Simple Parameter-Free Attention）**：基于神经科学空间抑制理论，零参数 → 零过拟合风险，对局部异常（如螺栓缺失）天然敏感
 
-| Model                                                                                | size<br><sup>(pixels)</sup> | mAP<sup>val<br>50-95</sup> | mAP<sup>val<br>50-95(e2e)</sup> | Speed<br><sup>CPU ONNX<br>(ms)</sup> | Speed<br><sup>T4 TensorRT10<br>(ms)</sup> | params<br><sup>(M)</sup> | FLOPs<br><sup>(B)</sup> |
-| ------------------------------------------------------------------------------------ | --------------------------- | -------------------------- | ------------------------------- | ------------------------------------ | ----------------------------------------- | ------------------------ | ----------------------- |
-| [YOLO26n](https://github.com/ultralytics/assets/releases/download/v8.4.0/yolo26n.pt) | 640                         | 40.9                       | 40.1                            | 38.9 ± 0.7                           | 1.7 ± 0.0                                 | 2.4                      | 5.4                     |
-| [YOLO26s](https://github.com/ultralytics/assets/releases/download/v8.4.0/yolo26s.pt) | 640                         | 48.6                       | 47.8                            | 87.2 ± 0.9                           | 2.5 ± 0.0                                 | 9.5                      | 20.7                    |
-| [YOLO26m](https://github.com/ultralytics/assets/releases/download/v8.4.0/yolo26m.pt) | 640                         | 53.1                       | 52.5                            | 220.0 ± 1.4                          | 4.7 ± 0.1                                 | 20.4                     | 68.2                    |
-| [YOLO26l](https://github.com/ultralytics/assets/releases/download/v8.4.0/yolo26l.pt) | 640                         | 55.0                       | 54.4                            | 286.2 ± 2.0                          | 6.2 ± 0.2                                 | 24.8                     | 86.4                    |
-| [YOLO26x](https://github.com/ultralytics/assets/releases/download/v8.4.0/yolo26x.pt) | 640                         | 57.5                       | 56.9                            | 525.8 ± 4.0                          | 11.8 ± 0.2                                | 55.7                     | 193.9                   |
+### 双卡异构 Ensemble（地面端）
 
-- **mAP<sup>val</sup>** values refer to single-model single-scale performance on the [COCO val2017](https://cocodataset.org/) dataset. See [YOLO Performance Metrics](https://docs.ultralytics.com/guides/yolo-performance-metrics/) for details. <br>Reproduce with `yolo val detect data=coco.yaml device=0`
-- **Speed** metrics are averaged over COCO val images using an [Amazon EC2 P4d](https://aws.amazon.com/ec2/instance-types/p4/) instance. CPU speeds measured with [ONNX](https://onnx.ai/) export. GPU speeds measured with [TensorRT](https://developer.nvidia.com/tensorrt) export. <br>Reproduce with `yolo val detect data=coco.yaml batch=1 device=0|cpu`
+```
+GPU 0: YOLO11m-EMA-SimAM        GPU 1: YOLO11m-P2-SimAM
+(ECA 通道选择, 3 尺度)            (P2 四尺度小目标特化)
+         │                              │
+         └──────────┬───────────────────┘
+                    ▼
+          ┌─────────────────┐
+          │  WBF 融合引擎    │
+          │  IoU=0.55        │
+          │  双模型≥0.50     │
+          │  单模型≥0.75     │
+          │  最终≥0.60       │
+          └─────────────────┘
+```
 
-</details>
+## 模型选型
 
-<details><summary>Segmentation (COCO)</summary>
+### 模型变体
 
-Refer to the [Segmentation Docs](https://docs.ultralytics.com/tasks/segment/) for usage examples. These models are trained on [COCO-Seg](https://docs.ultralytics.com/datasets/segment/coco/), including 80 classes.
+| 模型 | 用途 | 参数量 | GFLOPs | 检测尺度 | 注意力 |
+|------|------|--------|--------|---------|--------|
+| YOLO11n-ROI | Stage 1 结构区域 | 2.6M | 6.6 | P3/P4/P5 | 无 |
+| YOLO11s-EMA-SimAM | 车载端主方案 | 9.5M | 21.7 | P3/P4/P5 | EMA + SimAM |
+| YOLO11m-EMA-SimAM | 地面端 GPU 0 | 20.1M | 68.5 | P3/P4/P5 | EMA + SimAM + ECA |
+| YOLO11m-P2-SimAM | 地面端 GPU 1 | ~25M | ~90 | P2/P3/P4/P5 | SimAM ×4 |
 
-| Model                                                                                        | size<br><sup>(pixels)</sup> | mAP<sup>box<br>50-95(e2e)</sup> | mAP<sup>mask<br>50-95(e2e)</sup> | Speed<br><sup>CPU ONNX<br>(ms)</sup> | Speed<br><sup>T4 TensorRT10<br>(ms)</sup> | params<br><sup>(M)</sup> | FLOPs<br><sup>(B)</sup> |
-| -------------------------------------------------------------------------------------------- | --------------------------- | ------------------------------- | -------------------------------- | ------------------------------------ | ----------------------------------------- | ------------------------ | ----------------------- |
-| [YOLO26n-seg](https://github.com/ultralytics/assets/releases/download/v8.4.0/yolo26n-seg.pt) | 640                         | 39.6                            | 33.9                             | 53.3 ± 0.5                           | 2.1 ± 0.0                                 | 2.7                      | 9.1                     |
-| [YOLO26s-seg](https://github.com/ultralytics/assets/releases/download/v8.4.0/yolo26s-seg.pt) | 640                         | 47.3                            | 40.0                             | 118.4 ± 0.9                          | 3.3 ± 0.0                                 | 10.4                     | 34.2                    |
-| [YOLO26m-seg](https://github.com/ultralytics/assets/releases/download/v8.4.0/yolo26m-seg.pt) | 640                         | 52.5                            | 44.1                             | 328.2 ± 2.4                          | 6.7 ± 0.1                                 | 23.6                     | 121.5                   |
-| [YOLO26l-seg](https://github.com/ultralytics/assets/releases/download/v8.4.0/yolo26l-seg.pt) | 640                         | 54.4                            | 45.5                             | 387.0 ± 3.7                          | 8.0 ± 0.1                                 | 28.0                     | 139.8                   |
-| [YOLO26x-seg](https://github.com/ultralytics/assets/releases/download/v8.4.0/yolo26x-seg.pt) | 640                         | 56.5                            | 47.0                             | 787.0 ± 6.8                          | 16.4 ± 0.1                                | 62.8                     | 313.5                   |
+### 选型策略
 
-- **mAP<sup>val</sup>** values are for single-model single-scale on the [COCO val2017](https://cocodataset.org/) dataset. See [YOLO Performance Metrics](https://docs.ultralytics.com/guides/yolo-performance-metrics/) for details. <br>Reproduce with `yolo val segment data=coco.yaml device=0`
-- **Speed** metrics are averaged over COCO val images using an [Amazon EC2 P4d](https://aws.amazon.com/ec2/instance-types/p4/) instance. CPU speeds measured with [ONNX](https://onnx.ai/) export. GPU speeds measured with [TensorRT](https://developer.nvidia.com/tensorrt) export. <br>Reproduce with `yolo val segment data=coco.yaml batch=1 device=0|cpu`
+**车载端（单 RTX 4090，≤ 10s）**: 主方案 YOLO11s-EMA-SimAM (FP16)，备选 YOLO11m-EMA-SimAM (INT8)
 
-</details>
+**地面端（双 RTX 4090，提报率 ≤ 5%）**: GPU 0 YOLO11m-EMA-SimAM + GPU 1 YOLO11m-P2-SimAM → WBF 融合
 
-<details><summary>Classification (ImageNet)</summary>
+## 训练流程
 
-Consult the [Classification Docs](https://docs.ultralytics.com/tasks/classify/) for usage examples. These models are trained on [ImageNet](https://docs.ultralytics.com/datasets/classify/imagenet/), covering 1000 classes.
+### Stage A: COCO 预训练
 
-| Model                                                                                        | size<br><sup>(pixels)</sup> | acc<br><sup>top1</sup> | acc<br><sup>top5</sup> | Speed<br><sup>CPU ONNX<br>(ms)</sup> | Speed<br><sup>T4 TensorRT10<br>(ms)</sup> | params<br><sup>(M)</sup> | FLOPs<br><sup>(B) at 224</sup> |
-| -------------------------------------------------------------------------------------------- | --------------------------- | ---------------------- | ---------------------- | ------------------------------------ | ----------------------------------------- | ------------------------ | ------------------------------ |
-| [YOLO26n-cls](https://github.com/ultralytics/assets/releases/download/v8.4.0/yolo26n-cls.pt) | 224                         | 71.4                   | 90.1                   | 5.0 ± 0.3                            | 1.1 ± 0.0                                 | 2.8                      | 0.5                            |
-| [YOLO26s-cls](https://github.com/ultralytics/assets/releases/download/v8.4.0/yolo26s-cls.pt) | 224                         | 76.0                   | 92.9                   | 7.9 ± 0.2                            | 1.3 ± 0.0                                 | 6.7                      | 1.6                            |
-| [YOLO26m-cls](https://github.com/ultralytics/assets/releases/download/v8.4.0/yolo26m-cls.pt) | 224                         | 78.1                   | 94.2                   | 17.2 ± 0.4                           | 2.0 ± 0.0                                 | 11.6                     | 4.9                            |
-| [YOLO26l-cls](https://github.com/ultralytics/assets/releases/download/v8.4.0/yolo26l-cls.pt) | 224                         | 79.0                   | 94.6                   | 23.2 ± 0.3                           | 2.8 ± 0.0                                 | 14.1                     | 6.2                            |
-| [YOLO26x-cls](https://github.com/ultralytics/assets/releases/download/v8.4.0/yolo26x-cls.pt) | 224                         | 79.9                   | 95.0                   | 41.4 ± 0.9                           | 3.8 ± 0.0                                 | 29.6                     | 13.6                           |
+下载官方 COCO 预训练权重（自动或手动）：
 
-- **acc** values represent model accuracy on the [ImageNet](https://www.image-net.org/) dataset validation set. <br>Reproduce with `yolo val classify data=path/to/ImageNet device=0`
-- **Speed** metrics are averaged over ImageNet val images using an [Amazon EC2 P4d](https://aws.amazon.com/ec2/instance-types/p4/) instance. CPU speeds measured with [ONNX](https://onnx.ai/) export. GPU speeds measured with [TensorRT](https://developer.nvidia.com/tensorrt) export. <br>Reproduce with `yolo val classify data=path/to/ImageNet batch=1 device=0|cpu`
+```bash
+# 自动下载（代码内置）
+# yolo11n.pt / yolo11s.pt / yolo11m.pt
 
-</details>
+# 或手动下载
+wget https://github.com/ultralytics/assets/releases/download/v8.4.0/yolo11s.pt
+```
 
-<details><summary>Pose (COCO)</summary>
+### Stage B: ROI 提案器训练
 
-See the [Pose Estimation Docs](https://docs.ultralytics.com/tasks/pose/) for usage examples. These models are trained on [COCO-Pose](https://docs.ultralytics.com/datasets/pose/coco/), focusing on the 'person' class.
+```bash
+train-roi --data datasets/roi/roi_data.yaml \
+          --model yolo11n.yaml \
+          --epochs 200 \
+          --device 0
+```
 
-| Model                                                                                          | size<br><sup>(pixels)</sup> | mAP<sup>pose<br>50-95(e2e)</sup> | mAP<sup>pose<br>50(e2e)</sup> | Speed<br><sup>CPU ONNX<br>(ms)</sup> | Speed<br><sup>T4 TensorRT10<br>(ms)</sup> | params<br><sup>(M)</sup> | FLOPs<br><sup>(B)</sup> |
-| ---------------------------------------------------------------------------------------------- | --------------------------- | -------------------------------- | ----------------------------- | ------------------------------------ | ----------------------------------------- | ------------------------ | ----------------------- |
-| [YOLO26n-pose](https://github.com/ultralytics/assets/releases/download/v8.4.0/yolo26n-pose.pt) | 640                         | 57.2                             | 83.3                          | 40.3 ± 0.5                           | 1.8 ± 0.0                                 | 2.9                      | 7.5                     |
-| [YOLO26s-pose](https://github.com/ultralytics/assets/releases/download/v8.4.0/yolo26s-pose.pt) | 640                         | 63.0                             | 86.6                          | 85.3 ± 0.9                           | 2.7 ± 0.0                                 | 10.4                     | 23.9                    |
-| [YOLO26m-pose](https://github.com/ultralytics/assets/releases/download/v8.4.0/yolo26m-pose.pt) | 640                         | 68.8                             | 89.6                          | 218.0 ± 1.5                          | 5.0 ± 0.1                                 | 21.5                     | 73.1                    |
-| [YOLO26l-pose](https://github.com/ultralytics/assets/releases/download/v8.4.0/yolo26l-pose.pt) | 640                         | 70.4                             | 90.5                          | 275.4 ± 2.4                          | 6.5 ± 0.1                                 | 25.9                     | 91.3                    |
-| [YOLO26x-pose](https://github.com/ultralytics/assets/releases/download/v8.4.0/yolo26x-pose.pt) | 640                         | 71.6                             | 91.6                          | 565.4 ± 3.0                          | 12.2 ± 0.2                                | 57.6                     | 201.7                   |
+训练目标：ROI Recall ≥ 99%（极低置信阈值 0.10-0.15，宁可多报，绝不漏报）
 
-- **mAP<sup>val</sup>** values are for single-model single-scale on the [COCO Keypoints val2017](https://docs.ultralytics.com/datasets/pose/coco/) dataset. See [YOLO Performance Metrics](https://docs.ultralytics.com/guides/yolo-performance-metrics/) for details. <br>Reproduce with `yolo val pose data=coco-pose.yaml device=0`
-- **Speed** metrics are averaged over COCO val images using an [Amazon EC2 P4d](https://aws.amazon.com/ec2/instance-types/p4/) instance. CPU speeds measured with [ONNX](https://onnx.ai/) export. GPU speeds measured with [TensorRT](https://developer.nvidia.com/tensorrt) export. <br>Reproduce with `yolo val pose data=coco-pose.yaml batch=1 device=0|cpu`
+### Stage C: 缺陷检测三阶段训练
 
-</details>
+```bash
+# 完整三阶段训练
+# C1: Head 预热 (50 epochs, 冻结 backbone)
+# C2: 全量训练 (200 epochs, 强增强, Cosine LR)
+# C3: 微调     (50 epochs, 弱增强, 低 LR)
 
-<details><summary>Oriented Bounding Boxes (DOTAv1)</summary>
+train-defect --data datasets/defects/defect_data.yaml \
+             --model subway_defect/models/yolo11s-EMA-SimAM.yaml \
+             --coco_pretrain \
+             --device 0
+```
 
-Check the [OBB Docs](https://docs.ultralytics.com/tasks/obb/) for usage examples. These models are trained on [DOTAv1](https://docs.ultralytics.com/datasets/obb/dota-v2/#dota-v10/), including 15 classes.
+可选跳过阶段：
+```bash
+# 跳过 C1 预热（从已有权重加载）
+train-defect --data datasets/defects/defect_data.yaml \
+             --pretrained runs/defect_detector_c1_warmup/weights/best.pt \
+             --skip_warmup
 
-| Model                                                                                        | size<br><sup>(pixels)</sup> | mAP<sup>test<br>50-95(e2e)</sup> | mAP<sup>test<br>50(e2e)</sup> | Speed<br><sup>CPU ONNX<br>(ms)</sup> | Speed<br><sup>T4 TensorRT10<br>(ms)</sup> | params<br><sup>(M)</sup> | FLOPs<br><sup>(B)</sup> |
-| -------------------------------------------------------------------------------------------- | --------------------------- | -------------------------------- | ----------------------------- | ------------------------------------ | ----------------------------------------- | ------------------------ | ----------------------- |
-| [YOLO26n-obb](https://github.com/ultralytics/assets/releases/download/v8.4.0/yolo26n-obb.pt) | 1024                        | 52.4                             | 78.9                          | 97.7 ± 0.9                           | 2.8 ± 0.0                                 | 2.5                      | 14.0                    |
-| [YOLO26s-obb](https://github.com/ultralytics/assets/releases/download/v8.4.0/yolo26s-obb.pt) | 1024                        | 54.8                             | 80.9                          | 218.0 ± 1.4                          | 4.9 ± 0.1                                 | 9.8                      | 55.1                    |
-| [YOLO26m-obb](https://github.com/ultralytics/assets/releases/download/v8.4.0/yolo26m-obb.pt) | 1024                        | 55.3                             | 81.0                          | 579.2 ± 3.8                          | 10.2 ± 0.3                                | 21.2                     | 183.3                   |
-| [YOLO26l-obb](https://github.com/ultralytics/assets/releases/download/v8.4.0/yolo26l-obb.pt) | 1024                        | 56.2                             | 81.6                          | 735.6 ± 3.1                          | 13.0 ± 0.2                                | 25.6                     | 230.0                   |
-| [YOLO26x-obb](https://github.com/ultralytics/assets/releases/download/v8.4.0/yolo26x-obb.pt) | 1024                        | 56.7                             | 81.7                          | 1485.7 ± 11.5                        | 30.5 ± 0.9                                | 57.6                     | 516.5                   |
+# 跳过 C3 微调
+train-defect --data datasets/defects/defect_data.yaml --skip_finetune
+```
 
-- **mAP<sup>test</sup>** values are for single-model multiscale performance on the [DOTAv1 test set](https://captain-whu.github.io/DOTA/dataset.html). <br>Reproduce by `yolo val obb data=DOTAv1.yaml device=0 split=test` and submit merged results to the [DOTA evaluation server](https://captain-whu.github.io/DOTA/evaluation.html).
-- **Speed** metrics are averaged over [DOTAv1 val images](https://docs.ultralytics.com/datasets/obb/dota-v2/#dota-v10) using an [Amazon EC2 P4d](https://aws.amazon.com/ec2/instance-types/p4/) instance. CPU speeds measured with [ONNX](https://onnx.ai/) export. GPU speeds measured with [TensorRT](https://developer.nvidia.com/tensorrt) export. <br>Reproduce by `yolo val obb data=DOTAv1.yaml batch=1 device=0|cpu`
+### 训练超参数
 
-</details>
+| 阶段 | Epochs | Optimizer | LR | Batch | Mosaic | CopyPaste | 说明 |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| B (ROI) | 200 | SGD | 0.01 | 32 | 0.8 | 0 | 轻量模型，640 分辨率 |
+| C1 (预热) | 50 | SGD | 0.001 | 16 | 0.5 | 0 | 冻结 backbone |
+| C2 (主训练) | 200 | AdamW | 0.001→0.00001 | 16 | 0.8→关闭 | 0.6 | Cosine LR，全增强 |
+| C3 (微调) | 50 | AdamW | 0.0001 | 8 | 0 | 0.4 | 接近真实分布 |
 
-## 🧩 Integrations
+> 所有超参数集中管理在 `subway_defect/train/configs.py`，可直接修改。
 
-Our key integrations with leading AI platforms extend the functionality of Ultralytics' offerings, enhancing tasks like dataset labeling, training, visualization, and model management. Discover how Ultralytics, in collaboration with partners like [Weights & Biases](https://docs.ultralytics.com/integrations/weights-biases/), [Comet ML](https://docs.ultralytics.com/integrations/comet/), [Roboflow](https://docs.ultralytics.com/integrations/roboflow/), and [Intel OpenVINO](https://docs.ultralytics.com/integrations/openvino/), can optimize your AI workflow. Explore more at [Ultralytics Integrations](https://docs.ultralytics.com/integrations/).
+## 推理部署
 
-<a href="https://docs.ultralytics.com/integrations/" target="_blank">
-    <img width="100%" src="https://github.com/ultralytics/assets/raw/main/yolov8/banner-integrations.png" alt="Ultralytics active learning integrations">
-</a>
-<br>
-<br>
+### 推理服务启动
 
-<div align="center">
-  <a href="https://platform.ultralytics.com/ultralytics/yolo26">
-    <img src="https://github.com/ultralytics/assets/raw/main/partners/logo-ultralytics-hub.png" width="10%" alt="Ultralytics Platform logo"></a>
-  <img src="https://github.com/ultralytics/assets/raw/main/social/logo-transparent.png" width="15%" height="0" alt="space">
-  <a href="https://docs.ultralytics.com/integrations/weights-biases/">
-    <img src="https://github.com/ultralytics/assets/raw/main/partners/logo-wb.png" width="10%" alt="Weights & Biases logo"></a>
-  <img src="https://github.com/ultralytics/assets/raw/main/social/logo-transparent.png" width="15%" height="0" alt="space">
-  <a href="https://docs.ultralytics.com/integrations/comet/">
-    <img src="https://github.com/ultralytics/assets/raw/main/partners/logo-comet.png" width="10%" alt="Comet ML logo"></a>
-  <img src="https://github.com/ultralytics/assets/raw/main/social/logo-transparent.png" width="15%" height="0" alt="space">
-  <a href="https://docs.ultralytics.com/integrations/neural-magic/">
-    <img src="https://github.com/ultralytics/assets/raw/main/partners/logo-neuralmagic.png" width="10%" alt="Neural Magic logo"></a>
-</div>
+```bash
+# 车载端（单模型）
+subway-server --port 8001 \
+              --model runs/defect_detector_c2_full/weights/best.pt \
+              --mode vehicle
 
-|                                                                   Ultralytics Platform 🌟                                                                   |                                                          Weights & Biases                                                           |                                                                              Comet                                                                              |                                                        Neural Magic                                                         |
-| :---------------------------------------------------------------------------------------------------------------------------------------------------------: | :---------------------------------------------------------------------------------------------------------------------------------: | :-------------------------------------------------------------------------------------------------------------------------------------------------------------: | :-------------------------------------------------------------------------------------------------------------------------: |
-| Streamline YOLO workflows: Label, train, and deploy effortlessly with [Ultralytics Platform](https://platform.ultralytics.com/ultralytics/yolo26). Try now! | Track experiments, hyperparameters, and results with [Weights & Biases](https://docs.ultralytics.com/integrations/weights-biases/). | Free forever, [Comet ML](https://docs.ultralytics.com/integrations/comet/) lets you save YOLO models, resume training, and interactively visualize predictions. | Run YOLO inference up to 6x faster with [Neural Magic DeepSparse](https://docs.ultralytics.com/integrations/neural-magic/). |
+# 地面端（双 GPU Ensemble + WBF 融合）
+subway-server --port 8001 \
+              --model runs/defect_detector_c2_full/weights/best.pt \
+              --model_b runs/defect_detector_p2/weights/best.pt \
+              --mode ground
+```
 
-## 🤝 Contribute
+### API 端点
 
-We thrive on community collaboration! Ultralytics YOLO wouldn't be the SOTA framework it is without contributions from developers like you. Please see our [Contributing Guide](https://docs.ultralytics.com/help/contributing/) to get started. We also welcome your feedback—share your experience by completing our [Survey](https://www.ultralytics.com/survey?utm_source=github&utm_medium=social&utm_campaign=Survey). A huge **Thank You** 🙏 to everyone who contributes!
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| `GET` | `/health` | 健康检查 + GPU 状态 |
+| `POST` | `/api/dl/infer` | 单张图像缺陷检测 |
+| `POST` | `/api/dl/model/load` | 加载/切换模型 |
 
-<!-- SVG image from https://opencollective.com/ultralytics/contributors.svg?width=1280 -->
+推理请求示例：
+```json
+{
+  "image_path": "/data/images/20260624_001.jpg",
+  "model_type": "vehicle",
+  "confidence_threshold": 0.40,
+  "slice_size": 1024,
+  "slice_overlap": 0.15
+}
+```
 
-[![Ultralytics open-source contributors](https://raw.githubusercontent.com/ultralytics/assets/main/im/image-contributors.png)](https://github.com/ultralytics/ultralytics/graphs/contributors)
+> 完整 API 接口规范（与前后端集成的契约）见 [SPECIFICATION.md §6](SPECIFICATION.md#6-api-接口规格) 和 `subway_defect/docs/开发方案(5.30)/` 目录。
 
-We look forward to your contributions to help make the Ultralytics ecosystem even better!
+### TensorRT 加速导出
 
-## 📜 License
+```bash
+# FP16 导出（推荐，车载端必备）
+export-tensorrt --model runs/defect_detector_c2_full/weights/best.pt --fp16
 
-Ultralytics offers two licensing options to suit different needs:
+# 自定义输出路径
+export-tensorrt --model best.pt --fp16 --output /path/to/model.engine
 
-- **AGPL-3.0 License**: This [OSI-approved](https://opensource.org/license/agpl-v3) open-source license is perfect for students, researchers, and enthusiasts. It encourages open collaboration and knowledge sharing. See the [LICENSE](https://github.com/ultralytics/ultralytics/blob/main/LICENSE) file for full details.
-- **Ultralytics Enterprise License**: Designed for commercial use, this license allows for the seamless integration of Ultralytics software and AI models into commercial products and services, bypassing the open-source requirements of AGPL-3.0. If your use case involves commercial deployment, please contact us via [Ultralytics Licensing](https://www.ultralytics.com/license).
+# INT8 导出（需校准数据集 200-500 张）
+export-tensorrt --model best.pt --int8 \
+                --calibration_data datasets/calibration/
+```
 
-## 📞 Contact
+## 合成数据生成
 
-For bug reports and feature requests related to Ultralytics software, please visit [GitHub Issues](https://github.com/ultralytics/ultralytics/issues). For questions, discussions, and community support, join our active communities on [Discord](https://discord.com/invite/ultralytics), [Reddit](https://www.reddit.com/r/ultralytics/), and the [Ultralytics Community Forums](https://community.ultralytics.com/). We're here to help with all things Ultralytics!
+```bash
+synthesize-defects --images datasets/images/train/ \
+                   --labels datasets/labels/train/ \
+                   --output datasets/synthetic/ \
+                   --target_class 0 \
+                   --limit 200
+```
 
-<br>
-<div align="center">
-  <a href="https://github.com/ultralytics"><img src="https://github.com/ultralytics/assets/raw/main/social/logo-social-github.png" width="3%" alt="Ultralytics GitHub"></a>
-  <img src="https://github.com/ultralytics/assets/raw/main/social/logo-transparent.png" width="3%" alt="space">
-  <a href="https://www.linkedin.com/company/ultralytics/"><img src="https://github.com/ultralytics/assets/raw/main/social/logo-social-linkedin.png" width="3%" alt="Ultralytics LinkedIn"></a>
-  <img src="https://github.com/ultralytics/assets/raw/main/social/logo-transparent.png" width="3%" alt="space">
-  <a href="https://twitter.com/ultralytics"><img src="https://github.com/ultralytics/assets/raw/main/social/logo-social-twitter.png" width="3%" alt="Ultralytics Twitter"></a>
-  <img src="https://github.com/ultralytics/assets/raw/main/social/logo-transparent.png" width="3%" alt="space">
-  <a href="https://www.youtube.com/ultralytics?sub_confirmation=1"><img src="https://github.com/ultralytics/assets/raw/main/social/logo-social-youtube.png" width="3%" alt="Ultralytics YouTube"></a>
-  <img src="https://github.com/ultralytics/assets/raw/main/social/logo-transparent.png" width="3%" alt="space">
-  <a href="https://www.tiktok.com/@ultralytics"><img src="https://github.com/ultralytics/assets/raw/main/social/logo-social-tiktok.png" width="3%" alt="Ultralytics TikTok"></a>
-  <img src="https://github.com/ultralytics/assets/raw/main/social/logo-transparent.png" width="3%" alt="space">
-  <a href="https://ultralytics.com/bilibili"><img src="https://github.com/ultralytics/assets/raw/main/social/logo-social-bilibili.png" width="3%" alt="Ultralytics BiliBili"></a>
-  <img src="https://github.com/ultralytics/assets/raw/main/social/logo-transparent.png" width="3%" alt="space">
-  <a href="https://discord.com/invite/ultralytics"><img src="https://github.com/ultralytics/assets/raw/main/social/logo-social-discord.png" width="3%" alt="Ultralytics Discord"></a>
-</div>
+## 缺陷类别编码（18 类）
+
+### 刚性接触网（13 类）
+
+| 编码 | 中文名称 | 严重等级 |
+| --- | --- | --- |
+| `rigid_base_nut_missing` | 垂直悬吊安装底座螺母缺失 | serious |
+| `rigid_base_nut_loose` | 垂直悬吊安装底座螺母松动 | serious |
+| `rigid_single_bracket_base_nut_missing` | 单支垂直悬吊槽钢底座螺母缺失 | serious |
+| `rigid_single_bracket_base_nut_loose` | 单支垂直悬吊槽钢底座螺母松动 | serious |
+| `rigid_single_bracket_upper_nut_loose` | 单支垂直悬吊槽钢上方螺母松动 | normal |
+| `rigid_hanger_top_plate_nut_missing` | 刚性悬挂吊柱顶板底面螺母缺失 | serious |
+| `rigid_hanger_top_plate_nut_loose` | 刚性悬挂吊柱顶板底面螺母松动 | serious |
+| `rigid_ground_wire_clamp_nut_missing` | 地线线夹托板安装底座螺母缺失 | serious |
+| `rigid_ground_wire_clamp_nut_loose` | 地线线夹托板安装底座螺母松动 | serious |
+| `rigid_ground_wire_nut_missing` | 地线线夹螺母缺失 | serious |
+| `rigid_ground_wire_nut_loose` | 地线线夹螺母松动 | serious |
+| `rigid_busbar_joint_bolt_missing` | 汇流排中间接头螺栓缺失 | **critical** |
+| `rigid_insulator_damage` | 绝缘子破损 | **critical** |
+
+### 柔性接触网 + 通用缺陷（5 类）
+
+| 编码 | 中文名称 | 严重等级 |
+| --- | --- | --- |
+| `flex_wrist_base_hori_pin_missing` | 腕臂底座横向销钉缺开口销 | serious |
+| `flex_wrist_base_vert_pin_missing` | 腕臂底座垂直销钉缺开口销 | serious |
+| `flex_dropper_no_force` | 吊弦不受力 | serious |
+| `foreign_object` | 异物侵入 | normal |
+| `component_deformation` | 部件变形 | normal |
+
+## 持续训练管道
+
+```
+数据采集(工程车) → 主动学习筛选 → 人工标注 → 数据集版本管理 → 自动训练触发 → 模型注册 & 部署
+```
+
+**触发条件**:
+- 新增标注数据 ≥ 200 张
+- 新增缺陷类别
+- 线上 Precision/Recall 低于验收线
+- 定期重训练（每季度）
+
+**部署准入条件**:
+1. Recall ≥ 当前线上版本
+2. Precision ≥ 当前线上版本
+3. 无类别退化: 任何类 Recall 下降 ≤ 5%
+4. 推理耗时不增加
+
+## 设计文档
+
+- [完整规格说明书](SPECIFICATION.md) — 项目需求、架构、接口、数据、测试等完整规范
+- [AI 算法设计文档](subway_defect/docs/地铁接触网缺陷检测AI算法设计文档.md) — 核心算法完整设计
+- [系统开发方案](subway_defect/docs/开发方案(5.30)/0-总览.md) — 前后端 + DL 系统架构
+- [实现计划 1: 核心模型](subway_defect/docs/plans/2026-06-23-plan-1-core-model-architecture.md)
+- [实现计划 2: 训练管道](subway_defect/docs/plans/2026-06-23-plan-2-training-pipeline.md)
+- [实现计划 3: 推理引擎](subway_defect/docs/plans/2026-06-23-plan-3-inference-engine.md)
+
+## 技术参考
+
+| 模块 | 参考论文 | 出处 |
+| --- | --- | --- |
+| YOLO11 | Ultralytics YOLO11 | https://docs.ultralytics.com/models/yolo11 |
+| EMA | Efficient Multi-Scale Attention | ICASSP 2023 |
+| SimAM | A Simple, Parameter-Free Attention Module | ICML 2021 |
+| CopyPaste | Simple Copy-Paste is a Strong Data Augmentation Method | ICCV 2021 |
+| WBF | Weighted Boxes Fusion: Ensembling boxes | arXiv 1910.13302 |
+| SAHI | Slicing Aided Hyper Inference | arXiv 2206 |
+
+## License
+
+AGPL-3.0 License — 与 YOLO 框架保持一致。
