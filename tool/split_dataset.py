@@ -6,17 +6,22 @@ suffixes (``_1_21``, ``_1_22``). Tiles from the same source panorama share the
 same prefix; we group by that prefix so all tiles from one source stay together
 in either train or val.
 
+Performance: Uses ThreadPoolExecutor for parallel file copy operations.
+
 Usage:
     python tool/split_dataset.py
-    python tool/split_dataset.py --ratio 0.8 --seed 42
+    python tool/split_dataset.py --ratio 0.8 --seed 42 --workers 8
 """
 
 import argparse
+import os
 import random
 import re
 import shutil
 from collections import defaultdict
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
+from typing import List, Tuple
 
 SEED = 42
 SPLIT_RATIO = 0.8
@@ -33,13 +38,26 @@ def extract_source_prefix(stem: str) -> str:
     return stem  # no recognised suffix — treat whole stem as source
 
 
+def _copy_one(copy_args: Tuple[Path, Path]) -> None:
+    """Copy a single file (image or label)."""
+    src, dst = copy_args
+    dst.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(src, dst)
+
+
 def main() -> None:
+    cpu_count = os.cpu_count() or 4
+
     parser = argparse.ArgumentParser(description="Train/val split with source grouping")
     parser.add_argument("--images_dir", default="data/Defect_dataset/images")
     parser.add_argument("--labels_dir", default="data/Defect_dataset/labels")
     parser.add_argument("--output_dir", default="data/Defect_dataset")
     parser.add_argument("--seed", type=int, default=SEED)
     parser.add_argument("--ratio", type=float, default=SPLIT_RATIO)
+    parser.add_argument(
+        "--workers", type=int, default=cpu_count,
+        help=f"Number of I/O threads (default: {cpu_count})",
+    )
     args = parser.parse_args()
 
     random.seed(args.seed)
@@ -67,6 +85,7 @@ def main() -> None:
     print(f"[Step 3] Total source images : {len(sources)}")
     print(f"         Train sources     : {len(train_sources)} → {train_tiles} tiles")
     print(f"         Val sources       : {len(val_sources)} → {val_tiles} tiles")
+    print(f"         I/O workers       : {args.workers}")
 
     # Highlight multi-tile sources
     multi = {s: stems for s, stems in source_groups.items() if len(stems) > 1}
@@ -80,20 +99,25 @@ def main() -> None:
         (output_dir / "images" / split_name).mkdir(parents=True, exist_ok=True)
         (output_dir / "labels" / split_name).mkdir(parents=True, exist_ok=True)
 
-    # ---- Copy files ----
+    # ---- Build copy task list ----
+    copy_tasks: List[Tuple[Path, Path]] = []
     for split_name, source_set in (("train", train_sources), ("val", val_sources)):
         for source in source_set:
             for stem in source_groups[source]:
                 src_img = images_dir / f"{stem}.jpg"
                 dst_img = output_dir / "images" / split_name / f"{stem}.jpg"
-                shutil.copy2(src_img, dst_img)
+                copy_tasks.append((src_img, dst_img))
 
                 src_lbl = labels_dir / f"{stem}.txt"
                 dst_lbl = output_dir / "labels" / split_name / f"{stem}.txt"
                 if src_lbl.exists():
-                    shutil.copy2(src_lbl, dst_lbl)
+                    copy_tasks.append((src_lbl, dst_lbl))
 
-    print("         Split complete.")
+    # ---- Parallel copy ----
+    with ThreadPoolExecutor(max_workers=args.workers) as executor:
+        list(executor.map(_copy_one, copy_tasks))
+
+    print(f"         Split complete ({len(copy_tasks)} files copied).")
 
 
 if __name__ == "__main__":

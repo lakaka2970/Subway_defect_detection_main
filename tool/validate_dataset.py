@@ -8,14 +8,20 @@ Checks:
   - Class distribution per split.
   - Train/val source-group isolation (no leakage).
 
+Performance: Uses ThreadPoolExecutor for parallel label file parsing.
+
 Usage:
     python tool/validate_dataset.py
+    python tool/validate_dataset.py --workers 8
 """
 
 import argparse
+import os
 import re
 from collections import Counter
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
+from typing import Dict, List, Optional, Tuple
 
 _TILE_SUFFIX_RE = re.compile(r"_\d+_\d+$")
 
@@ -25,14 +31,74 @@ def extract_source_prefix(stem: str) -> str:
     return stem[: m.start()] if m else stem
 
 
+def _parse_one_label(args: Tuple[Path, set]) -> Dict:
+    """Parse a single label file. Returns stats dict."""
+    lbl_path, img_stems = args
+    result = {
+        "stem": lbl_path.stem,
+        "has_image": lbl_path.stem in img_stems,
+        "empty": False,
+        "classes": set(),
+        "boxes_per_class": Counter(),
+        "bad_format": 0,
+        "errors": [],
+    }
+
+    try:
+        with open(lbl_path, encoding="utf-8") as f:
+            lines = f.readlines()
+    except Exception as e:
+        result["errors"].append(f"Cannot read {lbl_path.name}: {e}")
+        return result
+
+    if not lines or all(not line.strip() for line in lines):
+        result["empty"] = True
+        return result
+
+    for line in lines:
+        line = line.strip()
+        if not line:
+            continue
+        parts = line.split()
+        if len(parts) != 5:
+            result["bad_format"] += 1
+            continue
+        try:
+            cls_id = int(parts[0])
+            coords = [float(x) for x in parts[1:]]
+        except ValueError:
+            result["bad_format"] += 1
+            continue
+
+        if cls_id < 0 or cls_id > 6:
+            result["errors"].append(
+                f"class {cls_id} out of range in {lbl_path.name}")
+        if any(not (0.0 <= c <= 1.0) for c in coords):
+            result["errors"].append(
+                f"coords out of [0,1] in {lbl_path.name}: {coords}")
+        if coords[2] <= 0 or coords[3] <= 0:
+            result["errors"].append(
+                f"zero-area box in {lbl_path.name}: w={coords[2]}, h={coords[3]}")
+
+        result["boxes_per_class"][cls_id] += 1
+        result["classes"].add(cls_id)
+
+    return result
+
+
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Validate prepared dataset")
+    cpu_count = os.cpu_count() or 4
+
+    parser = argparse.ArgumentParser(description="Validate prepared dataset (parallel)")
     parser.add_argument("--dataset_root", default="data/Defect_dataset")
+    parser.add_argument(
+        "--workers", type=int, default=cpu_count,
+        help=f"Number of I/O threads (default: {cpu_count})",
+    )
     args = parser.parse_args()
 
     root = Path(args.dataset_root)
     errors: list[str] = []
-    all_ok = True
 
     for split in ("train", "val"):
         img_dir = root / "images" / split
@@ -49,62 +115,41 @@ def main() -> None:
         lbls = sorted(lbl_dir.glob("*.txt"))
 
         img_stems = {p.stem for p in imgs}
-        lbl_stems = {p.stem for p in lbls}
 
-        orphan_imgs = img_stems - lbl_stems
-        orphan_lbls = lbl_stems - img_stems
-
-        if orphan_imgs:
-            errors.append(f"[{split}] {len(orphan_imgs)} image(s) without label, "
-                          f"e.g. {list(orphan_imgs)[:3]}")
-        if orphan_lbls:
-            errors.append(f"[{split}] {len(orphan_lbls)} label(s) without image, "
-                          f"e.g. {list(orphan_lbls)[:3]}")
-
+        # ---- Parallel label parsing ----
         class_img_counts = Counter()
         class_box_counts = Counter()
         empty_labels = 0
         bad_format = 0
 
-        for lbl_path in lbls:
-            with open(lbl_path, encoding="utf-8") as f:
-                lines = f.readlines()
+        tasks = [(lbl_path, img_stems) for lbl_path in lbls]
+        with ThreadPoolExecutor(max_workers=args.workers) as executor:
+            futures = {executor.submit(_parse_one_label, task): task[0]
+                       for task in tasks}
+            for future in as_completed(futures):
+                r = future.result()
+                lbl_path = futures[future]
 
-            if not lines:
-                empty_labels += 1
-                continue
+                if not r["has_image"]:
+                    errors.append(f"[{split}] label without image: {lbl_path.name}")
 
-            classes_in_file: set[int] = set()
-            for line in lines:
-                line = line.strip()
-                if not line:
-                    continue
-                parts = line.split()
-                if len(parts) != 5:
-                    bad_format += 1
-                    if bad_format <= 3:
-                        errors.append(f"[{split}] bad format in {lbl_path.name}: {line}")
-                    continue
-                try:
-                    cls_id = int(parts[0])
-                    coords = [float(x) for x in parts[1:]]
-                except ValueError:
-                    bad_format += 1
-                    errors.append(f"[{split}] non-numeric in {lbl_path.name}: {line}")
-                    continue
+                if r["empty"]:
+                    empty_labels += 1
+                else:
+                    for cid in r["classes"]:
+                        class_img_counts[cid] += 1
+                    for cid, count in r["boxes_per_class"].items():
+                        class_box_counts[cid] += count
 
-                if cls_id < 0 or cls_id > 6:
-                    errors.append(f"[{split}] class {cls_id} out of range in {lbl_path.name}")
-                if any(not (0.0 <= c <= 1.0) for c in coords):
-                    errors.append(f"[{split}] coords out of [0,1] in {lbl_path.name}: {coords}")
-                if coords[2] <= 0 or coords[3] <= 0:
-                    errors.append(f"[{split}] zero-area box in {lbl_path.name}: w={coords[2]}, h={coords[3]}")
+                bad_format += r["bad_format"]
+                errors.extend(r["errors"])
 
-                class_box_counts[cls_id] += 1
-                classes_in_file.add(cls_id)
-
-            for cid in classes_in_file:
-                class_img_counts[cid] += 1
+        # Check for images without labels
+        lbl_stems = {p.stem for p in lbls}
+        orphan_imgs = img_stems - lbl_stems
+        if orphan_imgs:
+            errors.append(f"[{split}] {len(orphan_imgs)} image(s) without label, "
+                          f"e.g. {sorted(orphan_imgs)[:3]}")
 
         # Print per-split summary
         print(f"\n{'=' * 50}")

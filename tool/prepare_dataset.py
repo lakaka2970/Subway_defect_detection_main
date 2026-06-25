@@ -17,11 +17,15 @@ Usage:
 """
 
 import argparse
+import os
 import subprocess
 import sys
 from pathlib import Path
 
 TOOL_DIR = Path(__file__).resolve().parent
+
+# Steps that support --workers parallel processing
+_PARALLEL_STEPS = {3, 4, 5, 6}
 
 STEPS: dict[int, tuple[str, str]] = {
     1: ("Fix classes.txt",             "fix_classes_txt.py"),
@@ -48,6 +52,10 @@ def main() -> None:
     parser.add_argument(
         "--dry-run", action="store_true",
         help="Print steps without executing",
+    )
+    parser.add_argument(
+        "--workers", type=int, default=os.cpu_count(),
+        help=f"Parallel workers for steps 3-6 (default: {os.cpu_count()})",
     )
     args = parser.parse_args()
 
@@ -80,8 +88,12 @@ def main() -> None:
         print(f"  Script: {script}")
         print(f"{'=' * 60}")
 
+        cmd = [sys.executable, str(script_path)]
+        if step_num in _PARALLEL_STEPS:
+            cmd.extend(["--workers", str(args.workers)])
+
         result = subprocess.run(
-            [sys.executable, str(script_path)],
+            cmd,
             cwd=TOOL_DIR.parent,
             check=False,
         )
