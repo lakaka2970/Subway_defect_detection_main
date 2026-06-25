@@ -5,6 +5,16 @@ C1 — Head warmup (frozen backbone, 50 epochs)
 C2 — Full training (heavy augmentation, 200 epochs)
 C3 — Fine-tune (mild augmentation, 50 epochs)
 
+Output layout::
+
+    output/<timestamp>/
+        c1_warmup/
+        c2_full/
+        c3_finetune/
+
+Training hyperparameters are loaded from ``config/train/<stage>.yaml``.
+Hardware tuning (batch/workers/cache) is applied automatically at runtime.
+
 Stages run sequentially by default. Use --skip_* flags to control:
 
     # C1 only (head warmup, verify mAP50 > 0.30)
@@ -24,26 +34,41 @@ Usage:
 """
 
 import argparse
+import logging
+import sys
 import warnings
 from datetime import datetime
 from pathlib import Path
+from typing import Optional
 
 from subway_yolo import YOLO
 
 from subway_defect.train.configs import (
     COCO_PRETRAINED,
-    DEFECT_FINETUNE_CONFIG,
-    DEFECT_FULL_TRAIN_CONFIG,
-    DEFECT_WARMUP_CONFIG,
     HardwareProfile,
     apply_hardware_profile,
+    load_train_config,
 )
+
+logger = logging.getLogger(__name__)
+
+# ── Per-stage constants ─────────────────────────────────────────────
+_STAGE_CONFIGS = {
+    "warmup":   {"label": "C1: Head Warmup (50 epochs, frozen backbone)", "vram_gb": 4.0},
+    "full":     {"label": "C2: Full Training (200 epochs, heavy augmentation)", "vram_gb": 8.0},
+    "finetune": {"label": "C3: Fine-Tune (50 epochs, mild augmentation)", "vram_gb": 6.0},
+}
 
 
 def _check_gpu_memory(required_gb: float = 6.0) -> None:
     """Warn if GPU free memory is below *required_gb* before training starts."""
     try:
         import torch
+    except ImportError:
+        logger.warning("PyTorch not available — skipping GPU memory check")
+        return
+
+    try:
         if not torch.cuda.is_available():
             return
         torch.cuda.empty_cache()
@@ -55,8 +80,104 @@ def _check_gpu_memory(required_gb: float = 6.0) -> None:
                 f"Training may OOM. Close other GPU processes or reduce --batch.",
                 stacklevel=2,
             )
+    except RuntimeError as e:
+        logger.warning("GPU memory check failed (CUDA runtime error): %s", e)
+
+
+def _cleanup_gpu(model_obj) -> None:
+    """Release GPU resources held by a model instance."""
+    try:
+        import torch
+        del model_obj
+        torch.cuda.empty_cache()
     except Exception:
         pass
+
+
+def _resolve_pretrained(args, coco_pretrain_map: dict) -> Optional[str]:
+    """Resolve pretrained weights path with fallback to yolo_weights/.
+
+    Returns the resolved path string, or ``None`` if explicit pretrained
+    was requested but not found.
+    """
+    pretrained = args.pretrained
+    if args.coco_pretrain and not pretrained:
+        for key, weight in coco_pretrain_map.items():
+            if key in str(args.model):
+                pretrained = weight
+                logger.info("Auto COCO pretrain: %s", weight)
+                break
+        if not pretrained:
+            pretrained = "yolo11s.pt"
+            logger.info("Default COCO pretrain: %s", pretrained)
+
+    if not pretrained:
+        return None
+
+    pt_path = Path(pretrained)
+    if pt_path.exists():
+        return str(pt_path)
+
+    # Try yolo_weights/ directory
+    yolo_w = Path("yolo_weights") / pt_path.name
+    if yolo_w.exists():
+        logger.info("Found pretrained weights: %s", yolo_w)
+        return str(yolo_w)
+
+    logger.error("Pretrained weights not found: %s", pt_path.name)
+    logger.error("       Place the file in yolo_weights/ or use --pretrained <path>")
+    return None  # Caller must check for None and exit
+
+
+def _validate_model_path(model: str) -> None:
+    """Exit early if the model YAML file does not exist."""
+    if model.endswith((".yaml", ".yml")) and not Path(model).exists():
+        logger.error("Model config not found: %s", model)
+        sys.exit(1)
+
+
+def _apply_overrides(config: dict, args) -> dict:
+    """Apply CLI argument overrides to a training config."""
+    if args.workers is not None:
+        config["workers"] = args.workers
+    if args.batch is not None:
+        config["batch"] = args.batch
+    if args.no_amp:
+        config["amp"] = False
+    return config
+
+
+def _run_stage(stage_key: str, config: dict, profile, args, ckpt_in: Path) -> Path:
+    """Run a single training stage and return the path to best.pt.
+
+    Args:
+        stage_key: One of ``"warmup"``, ``"full"``, ``"finetune"``.
+        config: Base training config (from YAML).
+        profile: :class:`HardwareProfile` used for batch/worker tuning.
+        args: Parsed CLI arguments.
+        ckpt_in: Path to the checkpoint to load for this stage
+            (pretrained .pt or model .yaml for the first stage).
+
+    Returns:
+        Path to ``best.pt`` produced by this stage.
+    """
+    info = _STAGE_CONFIGS[stage_key]
+    logger.info("=" * 60)
+    logger.info("Stage %s", info["label"])
+    logger.info("=" * 60)
+
+    config = apply_hardware_profile({**load_train_config(stage_key), **config}, profile, args.model)
+    _apply_overrides(config, args)
+    _check_gpu_memory(required_gb=info["vram_gb"])
+
+    model = YOLO(str(ckpt_in))
+    try:
+        model.train(name=f"c{list(_STAGE_CONFIGS).index(stage_key) + 1}_{stage_key}", **config)
+        best = Path(model.trainer.save_dir) / "weights" / "best.pt"
+    finally:
+        _cleanup_gpu(model)
+
+    return best
 
 
 def main():
@@ -83,123 +204,45 @@ def main():
                         help="Override batch size (default: auto-detect from VRAM)")
     parser.add_argument("--no_amp", action="store_true",
                         help="Disable AMP (debug only)")
+    parser.add_argument("--vram", type=float, default=None,
+                        help="Manually specify GPU VRAM in GB (override auto-detection)")
     args = parser.parse_args()
+
+    _validate_model_path(args.model)
 
     # ── Hardware detection ──
     profile = HardwareProfile.detect()
+    if args.vram is not None:
+        profile.vram_gb = args.vram
+        logger.info("VRAM manually set to %.1f GB", args.vram)
 
     # Generate timestamp for this training run
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    # Use absolute path so output goes to <project_root>/output/ instead of runs/
-    output_root = Path(__file__).resolve().parents[2] / "output"
+    run_dir = Path(__file__).resolve().parents[2] / "output" / timestamp
 
-    base = {
-        "data": args.data,
-        "device": args.device,
-        "project": str(output_root),
-    }
+    base = {"data": args.data, "device": args.device, "project": str(run_dir)}
 
-    # Resolve pretrained weights — search in order:
-    #   1. Explicit path (--pretrained / COCO_PRETRAINED mapping)
-    #   2. yolo_weights/  directory (project pretrained weights)
-    #   3. Auto-download via attempt_download_asset inside YOLO()
-    pretrained = args.pretrained
-    if args.coco_pretrain and not pretrained:
-        # Auto-detect from model name
-        for key, weight in COCO_PRETRAINED.items():
-            if key in str(args.model):
-                pretrained = weight
-                print(f"Auto COCO pretrain: {weight}")
-                break
-        if not pretrained:
-            pretrained = "yolo11s.pt"
-            print(f"Default COCO pretrain: {pretrained}")
+    # Resolve pretrained weights
+    pretrained = _resolve_pretrained(args, COCO_PRETRAINED)
+    if args.pretrained and pretrained is None:
+        sys.exit(1)
 
-    # Resolve pretrained path: check explicit path, then yolo_weights/
-    if pretrained:
-        pt_path = Path(pretrained)
-        if not pt_path.exists():
-            # Try yolo_weights/ directory
-            yolo_w = Path("yolo_weights") / pt_path.name
-            if yolo_w.exists():
-                pretrained = str(yolo_w)
-                print(f"Found pretrained weights: {pretrained}")
-            else:
-                print(f"ERROR: Pretrained weights not found: {pt_path.name}")
-                print(f"       Place the file in yolo_weights/ or use --pretrained <path>")
-                return
+    # ── Stage execution (C1 → C2 → C3) ──
+    stage_plan = [
+        ("warmup",   not args.skip_warmup),
+        ("full",     not args.skip_full),
+        ("finetune", not args.skip_finetune),
+    ]
 
-    # -- C1: Warmup --
-    if not args.skip_warmup:
-        print("=" * 60)
-        print("Stage C1: Head Warmup (50 epochs, frozen backbone)")
-        print("=" * 60)
-        c1 = {**DEFECT_WARMUP_CONFIG, **base}
-        c1 = apply_hardware_profile(c1, profile, args.model)
-        if args.workers is not None:
-            c1["workers"] = args.workers
-        if args.batch is not None:
-            c1["batch"] = args.batch
-        if args.no_amp:
-            c1["amp"] = False
+    ckpt: Path = Path(pretrained) if pretrained else Path(args.model)
+    for stage_key, enabled in stage_plan:
+        if not enabled:
+            logger.info("Skipping %s", _STAGE_CONFIGS[stage_key]["label"])
+            continue
+        ckpt = _run_stage(stage_key, base, profile, args, ckpt)
 
-        _check_gpu_memory(required_gb=4.0)
-
-        model_file = pretrained or args.model
-        model = YOLO(model_file)
-        model.train(name=f"{args.name}_{timestamp}_c1_warmup", **c1)
-        ckpt = Path(model.trainer.save_dir) / "weights" / "best.pt"
-    else:
-        print("Skipping C1 warmup")
-        ckpt = Path(pretrained) if pretrained else Path(args.model)
-
-    # -- C2: Full Training --
-    if not args.skip_full:
-        print("=" * 60)
-        print("Stage C2: Full Training (200 epochs, heavy augmentation)")
-        print("=" * 60)
-        c2 = {**DEFECT_FULL_TRAIN_CONFIG, **base}
-        c2 = apply_hardware_profile(c2, profile, args.model)
-        if args.workers is not None:
-            c2["workers"] = args.workers
-        if args.batch is not None:
-            c2["batch"] = args.batch
-        if args.no_amp:
-            c2["amp"] = False
-
-        _check_gpu_memory(required_gb=8.0)
-
-        model2 = YOLO(str(ckpt))
-        model2.train(name=f"{args.name}_{timestamp}_c2_full", **c2)
-        ckpt2 = Path(model2.trainer.save_dir) / "weights" / "best.pt"
-    else:
-        print("Skipping C2 full training")
-        ckpt2 = ckpt
-
-    # -- C3: Fine-Tune --
-    if not args.skip_finetune:
-        print("=" * 60)
-        print("Stage C3: Fine-Tune (50 epochs, mild augmentation)")
-        print("=" * 60)
-        c3 = {**DEFECT_FINETUNE_CONFIG, **base}
-        c3 = apply_hardware_profile(c3, profile, args.model)
-        if args.workers is not None:
-            c3["workers"] = args.workers
-        if args.batch is not None:
-            c3["batch"] = args.batch
-        if args.no_amp:
-            c3["amp"] = False
-
-        _check_gpu_memory(required_gb=6.0)
-
-        model3 = YOLO(str(ckpt2))
-        model3.train(name=f"{args.name}_{timestamp}_c3_finetune", **c3)
-        final = Path(model3.trainer.save_dir) / "weights" / "best.pt"
-    else:
-        final = ckpt2
-
-    print("=" * 60)
-    print(f"Training complete. Final model: {final}")
+    logger.info("=" * 60)
+    logger.info("Training complete. Final model: %s", ckpt)
 
 
 if __name__ == "__main__":

@@ -1,0 +1,46 @@
+# ============================================================================
+# C2 Full Training — 解冻全部层，完整训练
+# ============================================================================
+# 目标: mAP50 在 C1 基础上大幅提升
+#
+# 使用方式:
+#   c2 = {**load_train_config("full"), **base}
+#   model.train(name="c2_full", **c2)
+#
+# 修改指南:
+#   - close_mosaic: 设为 0 则全程 mosaic；设为 N 则最后 N epoch 关闭
+#   - lrf: 余弦衰减最终 LR 倍数 (lrf=0.1 → final_lr = lr0 * 0.1)
+#   - copy_paste: 小数据集设为 0.3，若过拟合可降低
+# ============================================================================
+
+epochs: 200
+imgsz: 1024
+batch: 16
+optimizer: SGD
+lr0: 0.001
+lrf: 0.1
+momentum: 0.937
+weight_decay: 0.0005
+warmup_epochs: 5
+warmup_momentum: 0.8
+warmup_bias_lr: 0.1
+cos_lr: true
+
+# ── 数据增强 (中等强度) ──
+mosaic: 0.5
+mixup: 0.0
+copy_paste: 0.3
+copy_paste_mode: flip
+hsv_h: 0.015
+hsv_s: 0.7
+hsv_v: 0.6
+degrees: 5.0
+translate: 0.15
+scale: 0.5
+shear: 2.0
+perspective: 0.0005
+flipud: 0.0
+fliplr: 0.5
+close_mosaic: 15
+erasing: 0.4
+auto_augment: randaugment

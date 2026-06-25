@@ -69,11 +69,11 @@ TASK2CALIBRATIONDATA = {
     "obb": "dota128.yaml",
 }
 TASK2MODEL = {
-    "detect": "yolo26n.pt",
-    "segment": "yolo26n-seg.pt",
-    "classify": "yolo26n-cls.pt",
-    "pose": "yolo26n-pose.pt",
-    "obb": "yolo26n-obb.pt",
+    "detect": "yolo11n.pt",
+    "segment": "yolo11n-seg.pt",
+    "classify": "yolo11n-cls.pt",
+    "pose": "yolo11n-pose.pt",
+    "obb": "yolo11n-obb.pt",
 }
 TASK2METRIC = {
     "detect": "metrics/mAP50-95(B)",

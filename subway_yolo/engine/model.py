@@ -80,7 +80,7 @@ class Model(torch.nn.Module):
 
     def __init__(
         self,
-        model: Union[str, Path] | Model = "yolo26n.pt",
+        model: Union[str, Path] | Model = "yolo11n.pt",
         task: Optional[str] = None,
         verbose: bool = False,
     ) -> None:
@@ -345,7 +345,7 @@ class Model(torch.nn.Module):
             p.requires_grad = True
         return self
 
-    def load(self, weights: Union[str, Path] = "yolo26n.pt") -> Model:
+    def load(self, weights: Union[str, Path] = "yolo11n.pt") -> Model:
         """Load parameters from the specified weights file into the model.
 
         This method supports loading weights from a file or directly from a weights object. It matches parameters by

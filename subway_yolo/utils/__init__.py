@@ -41,10 +41,13 @@ ROOT = FILE.parents[1]  # YOLO
 ASSETS = ROOT / "assets"  # default images
 ASSETS_URL = "https://github.com/ultralytics/assets/releases/download/v0.0.0"  # assets GitHub URL
 DEFAULT_CFG_PATH = ROOT / "cfg/default.yaml"
+# Sentry DSN — set via SUBWAY_YOLO_SENTRY_DSN env var, or leave empty to disable.
+# Default DSN removed to avoid leaking telemetry to the upstream Ultralytics project.
+SENTRY_DSN = os.getenv("SUBWAY_YOLO_SENTRY_DSN", "")
 NUM_THREADS = min(8, max(1, os.cpu_count() - 1))  # number of YOLO multiprocessing threads
 AUTOINSTALL = str(os.getenv("YOLO_AUTOINSTALL", True)).lower() == "true"  # global auto-install mode
 VERBOSE = str(os.getenv("YOLO_VERBOSE", True)).lower() == "true"  # global verbose mode
-LOGGING_NAME = "ultralytics"
+LOGGING_NAME = "subway_yolo"
 MACOS, LINUX, WINDOWS = (platform.system() == x for x in ["Darwin", "Linux", "Windows"])  # environment booleans
 MACOS_VERSION = platform.mac_ver()[0] if MACOS else None
 NOT_MACOS14 = not (MACOS and MACOS_VERSION.startswith("14."))
@@ -1203,7 +1206,7 @@ def set_sentry():
         return event
 
     sentry_sdk.init(
-        dsn="https://888e5a0778212e1d0314c37d4b9aae5d@o4504521589325824.ingest.us.sentry.io/4504521592406016",
+        dsn=SENTRY_DSN,
         debug=False,
         auto_enabling_integrations=False,
         traces_sample_rate=1.0,
@@ -1459,7 +1462,7 @@ def vscode_msg(ext="ultralytics.ultralytics-snippets") -> str:
 # Run below code on utils init ------------------------------------------------------------------------------------
 
 # Check first-install steps
-PREFIX = colorstr("Ultralytics: ")
+PREFIX = colorstr("subway_yolo: ")
 SETTINGS = SettingsManager()  # initialize settings
 PERSISTENT_CACHE = JSONDict(USER_CONFIG_DIR / "persistent_cache.json")  # initialize persistent cache
 DATASETS_DIR = Path(SETTINGS["datasets_dir"])  # global datasets directory

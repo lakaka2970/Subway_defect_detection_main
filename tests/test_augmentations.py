@@ -61,22 +61,25 @@ class TestContactNetCopyPaste:
 
 
 class TestTrainingConfigs:
-    def test_configs_loadable(self):
-        from subway_defect.train.configs import (
-            ROI_TRAIN_CONFIG, DEFECT_WARMUP_CONFIG,
-            DEFECT_FULL_TRAIN_CONFIG, DEFECT_FINETUNE_CONFIG,
-        )
-        for name, cfg in [
-            ("ROI", ROI_TRAIN_CONFIG),
-            ("Warmup", DEFECT_WARMUP_CONFIG),
-            ("Full", DEFECT_FULL_TRAIN_CONFIG),
-            ("Finetune", DEFECT_FINETUNE_CONFIG),
-        ]:
-            assert "epochs" in cfg, f"{name}: missing epochs"
-            assert "imgsz" in cfg, f"{name}: missing imgsz"
-            assert "batch" in cfg, f"{name}: missing batch"
-            assert "optimizer" in cfg, f"{name}: missing optimizer"
-            assert "device" in cfg, f"{name}: missing device"
+    def test_yaml_configs_loadable(self):
+        """Training hyperparameters load from config/train/*.yaml."""
+        from subway_defect.train.configs import load_train_config
+        for stage in ["warmup", "full", "finetune"]:
+            cfg = load_train_config(stage)
+            assert "epochs" in cfg, f"{stage}: missing epochs"
+            assert "imgsz" in cfg, f"{stage}: missing imgsz"
+            assert "batch" in cfg, f"{stage}: missing batch"
+            assert "optimizer" in cfg, f"{stage}: missing optimizer"
+
+    def test_roi_config_loadable(self):
+        """ROI training config (Python constant) remains valid."""
+        from subway_defect.train.configs import ROI_TRAIN_CONFIG
+        cfg = ROI_TRAIN_CONFIG
+        assert "epochs" in cfg, "ROI: missing epochs"
+        assert "imgsz" in cfg, "ROI: missing imgsz"
+        assert "batch" in cfg, "ROI: missing batch"
+        assert "optimizer" in cfg, "ROI: missing optimizer"
+        assert "device" in cfg, "ROI: missing device"
 
     def test_scripts_importable(self):
         from subway_defect.train.train_roi import main as roi_main

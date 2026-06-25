@@ -9,10 +9,16 @@ and provides per-stage recommendations that balance throughput against OOM risk.
 
 from __future__ import annotations
 
+import logging
 import os
 import warnings
-from dataclasses import dataclass, field
-from typing import ClassVar, Dict, List, Optional, Tuple
+from dataclasses import dataclass
+from pathlib import Path
+from typing import ClassVar, Dict, Optional, Tuple
+
+logger = logging.getLogger(__name__)
+
+import yaml
 
 # ── Stage A: COCO Pretraining (base weights) ────────────────────
 # Not a training stage itself — maps to Ultralytics official weights.
@@ -79,6 +85,40 @@ class HardwareProfile:
                 if profile.vram_gb <= 0:
                     free, total = torch.cuda.mem_get_info(0)
                     profile.vram_gb = total / (1024 ** 3)
+
+                # Third fallback: nvidia-smi CLI query (some container runtimes
+                # report 0 from both torch APIs above)
+                if profile.vram_gb <= 0:
+                    try:
+                        import subprocess
+                        result = subprocess.run(
+                            ["nvidia-smi", "--query-gpu=memory.total",
+                             "--format=csv,noheader,nounits"],
+                            capture_output=True, text=True, timeout=5,
+                        )
+                        if result.returncode == 0 and result.stdout.strip():
+                            vram_mb = float(result.stdout.strip().split("\n")[0])
+                            profile.vram_gb = vram_mb / 1024.0
+                    except Exception:
+                        pass
+
+                # Sanity check: if GPU name contains a known high-VRAM card
+                # but detection reports unrealistically low VRAM, use known value.
+                _KNOWN_VRAM: dict = {
+                    "5090": 32.0,
+                    "5080": 16.0,
+                    "4090": 24.0,
+                    "4080": 16.0,
+                    "3090": 24.0,
+                    "3080": 10.0,
+                    "A100": 40.0,
+                    "A6000": 48.0,
+                }
+                if profile.vram_gb < 6.0 and profile.gpu_name:
+                    for gpu_key, known_vram in _KNOWN_VRAM.items():
+                        if gpu_key in profile.gpu_name:
+                            profile.vram_gb = known_vram
+                            break
         except Exception:
             pass
 
@@ -99,14 +139,14 @@ class HardwareProfile:
         return profile
 
     def print_info(self) -> None:
-        """Log detected hardware to stdout."""
-        print(f"=== Hardware Profile ===")
-        print(f"  GPU       : {self.gpu_name or 'N/A'}  ({self.vram_gb:.1f} GB VRAM)")
-        print(f"  CPU cores : {self.cpu_cores}")
-        print(f"  RAM       : {self.ram_gb:.1f} GB")
-        print(f"  Workers   : {self.recommended_workers}")
-        print(f"  Cache     : {self.recommended_cache}")
-        print(f"=========================")
+        """Log detected hardware."""
+        logger.info("=== Hardware Profile ===")
+        logger.info("  GPU       : %s  (%.1f GB VRAM)", self.gpu_name or "N/A", self.vram_gb)
+        logger.info("  CPU cores : %s", self.cpu_cores)
+        logger.info("  RAM       : %.1f GB", self.ram_gb)
+        logger.info("  Workers   : %s", self.recommended_workers)
+        logger.info("  Cache     : %s", self.recommended_cache)
+        logger.info("=========================")
 
     def estimate_batch_size(
         self,
@@ -142,8 +182,9 @@ class HardwareProfile:
         gb_per_sample = self._VRAM_PER_SAMPLE[key]
         usable_vram = self.vram_gb * safety_margin
 
-        # Reserve 4 GB for model weights + optimizer states + cuDNN workspace
-        model_overhead = 4.0
+        # Reserve 6 GB for model weights + optimizer states + cuDNN workspace
+        # (increased from 4 GB — imgsz=1024 with EMA/SimAM needs more headroom)
+        model_overhead = 6.0
         batch = int((usable_vram - model_overhead) / gb_per_sample)
 
         return max(min_batch, min(batch, max_batch))
@@ -270,10 +311,11 @@ DEFECT_FULL_TRAIN_CONFIG: dict = {
     "imgsz": 1024,
     "batch": 16,
     "optimizer": "SGD",        # Same optimizer family as C1 — avoids AdamW reset
-    "lr0": 0.001,              # Match C1 LR; cosine decay to 1e-5
-    "lrf": 0.01,
+    "lr0": 0.001,              # Match C1 LR; cosine decay to 1e-4
+    "lrf": 0.1,                # Gentler decay — keeps LR higher for longer
     "momentum": 0.937,
     "weight_decay": 0.0005,    # Match C1 regularization
+    "warmup_epochs": 5,        # Longer warmup when resuming from C1 checkpoint
     "cos_lr": True,
     "mosaic": 0.5,             # Reduced from 0.8 — less distortion for small dataset
     "mixup": 0.0,              # Disabled — let model learn real distribution first
@@ -289,7 +331,7 @@ DEFECT_FULL_TRAIN_CONFIG: dict = {
     "perspective": 0.0005,
     "flipud": 0.0,
     "fliplr": 0.5,
-    "close_mosaic": 190,
+    "close_mosaic": 15,        # Turn off mosaic for final 15 epochs — adapt to real images
 }
 
 
@@ -309,7 +351,7 @@ DEFECT_FINETUNE_CONFIG: dict = {
     "cos_lr": False,
     "mosaic": 0.0,
     "mixup": 0.0,
-    "copy_paste": 0.4,
+    "copy_paste": 0.0,         # Disabled — fine-tuning on real data only
     "copy_paste_mode": "flip",
     "hsv_h": 0.01,
     "hsv_s": 0.4,
@@ -321,6 +363,7 @@ DEFECT_FINETUNE_CONFIG: dict = {
     "perspective": 0.0,
     "flipud": 0.0,
     "fliplr": 0.3,
+    "erasing": 0.0,            # Disabled — erasing damages fine-grained defect features
     "close_mosaic": 0,
 }
 
@@ -368,8 +411,7 @@ def apply_hardware_profile(
     final_batch = max(final_batch, 4)
     config["batch"] = final_batch
 
-    print(f"  → batch={final_batch}  workers={config['workers']}  "
-          f"cache={config['cache']}")
+    logger.info("  → batch=%s  workers=%s  cache=%s", final_batch, config["workers"], config["cache"])
 
     # ── OOM safeguard: warn if estimated VRAM usage is high ──
     if profile.vram_gb > 0:
@@ -386,7 +428,53 @@ def apply_hardware_profile(
                 f"Consider reducing --batch or --imgsz if you see CUDA OOM errors.",
                 stacklevel=2,
             )
-        print(f"  → Estimated VRAM: {est_vram:.1f} / {profile.vram_gb:.1f} GB "
-              f"({usage_pct:.0f}%)")
+        logger.info("  → Estimated VRAM: %.1f / %.1f GB (%.0f%%)", est_vram, profile.vram_gb, usage_pct)
 
     return config
+
+
+# ============================================================================
+# YAML-based config loading
+# ============================================================================
+
+_CONFIG_DIR = Path(__file__).resolve().parents[2] / "config"
+
+
+def _load_yaml(filepath: Path) -> dict:
+    """Load a YAML config file, returning an empty dict if missing."""
+    if filepath.exists():
+        with open(filepath, "r", encoding="utf-8") as f:
+            return yaml.safe_load(f) or {}
+    return {}
+
+
+def load_train_config(stage: str) -> dict:
+    """Load training hyperparameters from ``config/train/<stage>.yaml``.
+
+    Args:
+        stage: One of ``"warmup"``, ``"full"``, ``"finetune"``.
+
+    Returns:
+        Config dict ready to unpack into ``YOLO.train(**config)``.
+
+    Raises:
+        FileNotFoundError: If the YAML file doesn't exist.
+    """
+    path = _CONFIG_DIR / "train" / f"{stage}.yaml"
+    config = _load_yaml(path)
+    if not config:
+        raise FileNotFoundError(
+            f"Training config not found: {path}\n"
+            f"Expected YAML files in config/train/ "
+            f"(warmup.yaml, full.yaml, finetune.yaml)"
+        )
+    return config
+
+
+def load_inference_config() -> dict:
+    """Load model inference/validation defaults from ``config/model/inference.yaml``.
+
+    Returns:
+        Inference config dict (empty if file missing).
+    """
+    return _load_yaml(_CONFIG_DIR / "model" / "inference.yaml")

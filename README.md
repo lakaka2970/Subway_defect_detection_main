@@ -295,7 +295,7 @@ train-defect \
     --name defect_detector
 ```
 
-> 输出目录：`output/defect_detector_<时间戳>_c1_warmup/`
+> 输出目录：`output/<时间戳>/c1_warmup/`
 
 | 关键参数 | 值 | 说明 |
 |----------|-----|------|
@@ -304,14 +304,16 @@ train-defect \
 | `mosaic` | 0.5 | 适度 Mosaic，不过度扭曲 |
 | `mixup` / `copy_paste` | 0 / 0 | 此阶段关闭混合增强 |
 
+> 训练超参数定义在 [`config/train/warmup.yaml`](config/train/warmup.yaml)，可直接修改。
+
 **✅ 验证检查点**：
 
 | 指标 | 目标值 | 如何查看 |
 |------|--------|---------|
-| best.pt 已保存 | 文件存在 | `ls output/defect_detector_<时间戳>_c1_warmup/weights/best.pt` |
+| best.pt 已保存 | 文件存在 | `ls output/<时间戳>/c1_warmup/weights/best.pt` |
 | mAP50 | **> 0.30** | 训练日志或 `results.csv` 中的 `metrics/mAP50(B)` |
 | Box Loss | **< 1.5** | `results.csv` 中的 `train/box_loss` |
-| 训练曲线 | 持续下降，无发散 | `output/defect_detector_<时间戳>_c1_warmup/results.png` |
+| 训练曲线 | 持续下降，无发散 | `output/<时间戳>/c1_warmup/results.png` |
 
 > **❌ 不通过**：Loss 持续不降 → 降低 LR 至 0.0005；mAP 始终 < 0.10 → 检查标注与图像是否匹配。
 
@@ -319,13 +321,13 @@ train-defect \
 
 ### Phase 4: Stage C2 — 全量训练（200 epochs）
 
-**训练原理**：解冻 backbone，启用全套增强（Mosaic 0.8 → 0, MixUp 0.15, CopyPaste 0.6），Cosine LR 从 0.001 衰减至 0.00001。这是模型能力提升最大的阶段。
+**训练原理**：解冻 backbone，启用增强（Mosaic 0.5, CopyPaste 0.3），SGD + Cosine LR 从 0.001 衰减至 0.0001。最后 15 个 epoch 关闭 Mosaic 让模型适应真实分布。
 
 ```bash
 # 从 C1 最佳权重开始，仅运行 C2（跳过 C1、C3）
 train-defect \
     --data data/Defect_dataset/defect_data.yaml \
-    --pretrained output/defect_detector_<时间戳>_c1_warmup/weights/best.pt \
+    --pretrained output/<时间戳>/c1_warmup/weights/best.pt \
     --skip_warmup \
     --device 0 \
     --skip_finetune \
@@ -336,19 +338,21 @@ train-defect \
 
 | 关键参数 | 值 | 说明 |
 |----------|-----|------|
-| `optimizer` | AdamW | 自适应学习率，适合长周期训练 |
-| `lr0` → `lrf` | 0.001 → 0.00001 | Cosine 衰减，平滑收敛 |
-| `mosaic` | 0.8（epoch 190 关闭） | 强 Mosaic 前期，后期关闭逼近真实分布 |
-| `mixup` | 0.15 | 跨图混合，增加样本多样性 |
-| `copy_paste` | 0.6 (mode="flip") | 同类内复制粘贴，缓解类别不平衡 |
-| `close_mosaic` | 190 | 最后 10 个 epoch 关闭 Mosaic |
+| `optimizer` | SGD | 与 C1 保持一致，避免优化器切换 |
+| `lr0` → `lrf` | 0.001 → 0.0001 | Cosine 衰减，延长有效学习窗口 |
+| `mosaic` | 0.5（最后 15 epoch 关闭） | 适度 Mosaic，后期切换真实分布 |
+| `mixup` | 0.0 | 关闭，让模型学习真实分布 |
+| `copy_paste` | 0.3 (mode="flip") | 适度实例增强 |
+| `close_mosaic` | 15 | 最后 15 个 epoch 关闭 Mosaic |
+
+> 训练超参数定义在 [`config/train/full.yaml`](config/train/full.yaml)，可直接修改。
 
 **✅ 验证检查点**：
 
 | 指标 | 目标值 | 如何查看 |
 |------|--------|---------|
-| mAP50 | **> 0.70** | `grep "mAP50" output/..._c2_full/results.csv` 末行 |
-| mAP50-95 | **> 0.40** | `grep "mAP50-95" output/..._c2_full/results.csv` 末行 |
+| mAP50 | **> 0.70** | `grep "mAP50" output/<时间戳>/c2_full/results.csv` 末行 |
+| mAP50-95 | **> 0.40** | `grep "mAP50-95" output/<时间戳>/c2_full/results.csv` 末行 |
 | Precision | **> 0.85** | `results.csv` 中的 `metrics/precision(B)` |
 | Recall | **> 0.85** | `results.csv` 中的 `metrics/recall(B)` |
 | 类别平衡 | **最低类 AP50 > 0.50** | 检查每类 AP，无类别崩塌 |
@@ -357,7 +361,7 @@ train-defect \
 ```bash
 python -c "
 from subway_yolo import YOLO
-model = YOLO('output/defect_detector_<时间戳>_c2_full/weights/best.pt')
+model = YOLO('output/<时间戳>/c2_full/weights/best.pt')
 metrics = model.val(data='data/Defect_dataset/defect_data.yaml', split='val')
 for i, ap in enumerate(metrics.ap_class_index):
     print(f'  Class {i}: AP50={metrics.ap50[i]:.3f}')
@@ -370,13 +374,13 @@ for i, ap in enumerate(metrics.ap_class_index):
 
 ### Phase 5: Stage C3 — 微调（50 epochs）
 
-**训练原理**：关闭 Mosaic 和 MixUp（它们改变数据分布），仅保留 CopyPaste 0.4 和轻量几何增强。低 LR (0.0001) 恒速微调，让模型收敛到真实数据分布上。
+**训练原理**：关闭 Mosaic 和 CopyPaste（它们改变数据分布），仅保留轻量 HSV + 几何增强。低 LR (0.0001) 恒速微调，让模型收敛到真实数据分布上。
 
 ```bash
 # 从 C2 最佳权重开始，仅运行 C3（跳过 C1、C2）
 train-defect \
     --data data/Defect_dataset/defect_data.yaml \
-    --pretrained output/defect_detector_<时间戳>_c2_full/weights/best.pt \
+    --pretrained output/<时间戳>/c2_full/weights/best.pt \
     --skip_warmup \
     --skip_full \
     --device 0 \
@@ -385,11 +389,13 @@ train-defect \
 
 | 关键参数 | 值 | 说明 |
 |----------|-----|------|
-| `mosaic` / `mixup` | 0 / 0 | 关闭，训练数据分布 = 推理分布 |
-| `lr0` | 0.0001 | 恒定低 LR，精细调整 |
+| `mosaic` / `mixup` / `copy_paste` | 0 / 0 / 0 | 全部关闭，训练 = 推理分布 |
+| `lr0` | 0.0001 | 恒速低 LR，精细调整 |
 | `batch` | 8 | 减小 batch，更精确的梯度 |
 | `degrees` / `scale` / `shear` | 2.0° / 0.3 / 1.0° | 弱几何增强 |
-| `copy_paste` | 0.4 | 保留适度实例增强 |
+| `erasing` | 0.0 | 关闭随机擦除，保留缺陷细节 |
+
+> 训练超参数定义在 [`config/train/finetune.yaml`](config/train/finetune.yaml)，可直接修改。
 
 **✅ 验证检查点**（最终验收指标）：
 
@@ -408,7 +414,7 @@ train-defect \
 
 ```bash
 # 车载端：从 COCO 预训练开始，自动完成 C1→C2→C3
-# 输出目录: output/defect_detector_<时间戳>_c{1,2,3}_{warmup,full,finetune}/
+# 输出目录: output/<时间戳>/{c1_warmup,c2_full,c3_finetune}/
 train-defect \
     --data data/Defect_dataset/defect_data.yaml \
     --model subway_defect/models/yolo11s-EMA-SimAM.yaml \
@@ -434,9 +440,9 @@ train-defect \
 | 1 | 数据准备 | `python tool/prepare_dataset.py` | ~1880 train + ~100 val | | |
 | 2 | 数据校验 | `python tool/validate_dataset.py` | `[PASS]` | | |
 | 3 | COCO 权重 | `python -c "from subway_yolo import YOLO; YOLO('yolo11s.pt')"` | 无报错 | | |
-| 4 | C1 预热 | `train-defect ... --coco_pretrain --skip_full --skip_finetune` | mAP50 > 0.30, Box Loss < 1.5<br>输出: `output/..._c1_warmup/` | | |
-| 5 | C2 主训练 | `train-defect ... --pretrained <c1_best> --skip_warmup --skip_finetune` | mAP50 > 0.70, P/R > 0.85<br>输出: `output/..._c2_full/` | | |
-| 6 | C3 微调 | `train-defect ... --pretrained <c2_best> --skip_warmup --skip_full` | mAP50 ≥ 0.75, P/R ≥ 0.90<br>输出: `output/..._c3_finetune/` | | |
+| 4 | C1 预热 | `train-defect ... --coco_pretrain --skip_full --skip_finetune` | mAP50 > 0.30, Box Loss < 1.5<br>输出: `output/<ts>/c1_warmup/` | | |
+| 5 | C2 主训练 | `train-defect ... --pretrained <c1_best> --skip_warmup --skip_finetune` | mAP50 > 0.70, P/R > 0.85<br>输出: `output/<ts>/c2_full/` | | |
+| 6 | C3 微调 | `train-defect ... --pretrained <c2_best> --skip_warmup --skip_full` | mAP50 ≥ 0.75, P/R ≥ 0.90<br>输出: `output/<ts>/c3_finetune/` | | |
 | 7 | 推理验证 | `subway-server --model <final.pt> --mode vehicle` | 推理耗时 ≤ 10s, 结果正确 | | |
 
 ---
@@ -445,17 +451,17 @@ train-defect \
 
 | 症状 | 可能原因 | 解决方案 |
 |------|---------|---------|
-| C1 loss 不下降 | LR 不合适 | 修改 `configs.py` 中 `lr0`: 0.001 → 0.0005 |
+| C1 loss 不下降 | LR 不合适 | 修改 `config/train/warmup.yaml` 中 `lr0`: 0.001 → 0.0005 |
 | C1 完成后 mAP50 < 0.15 | 标注格式或匹配错误 | 检查 label 文件名与 image 文件名是否一一对应 |
-| C2 mAP50 停滞在 0.4-0.5 | 增强过强，模型学不到真实分布 | 降低 `mosaic` 至 0.5, 降低 `copy_paste` 至 0.3 |
+| C2 mAP50 停滞在 0.4-0.5 | 增强过强，模型学不到真实分布 | 降低 `mosaic` 至 0.3, 降低 `copy_paste` 至 0.1（修改 `config/train/full.yaml`） |
 | 某类别 AP50 = 0 | 该类标注样本过少 | `python tool/generate_synthetic_defects.py --target_class <id> --limit_per_class -1` |
 | Val loss 上升，train loss 下降 | 过拟合 | 增大 `weight_decay` (0.0005→0.001), 增加增强强度 |
-| GPU 显存不足 (OOM) | batch size 过大 | 减小 `batch` 至 8 或 4（修改 `configs.py`） |
+| GPU 显存不足 (OOM) | batch size 过大 | 减小 `batch` 至 8 或 4（修改 `config/train/<stage>.yaml`） |
 | 训练意外中断 | 断电/超时 | 从最近 checkpoint 恢复：`--pretrained output/.../weights/last.pt --skip_warmup` |
 | 增强图片效果异常 | 场景增强参数不当 | 预览增强效果：`python -c "from subway_defect.augmentations.scene import *; ..."` 检查输出 |
 | 合成缺陷区域不自然 | Inpainting 修复痕迹明显 | 降低目标类 bbox 面积（仅对大目标 inpainting 效果较好） |
 
-> 所有训练超参数集中管理在 [`subway_defect/train/configs.py`](subway_defect/train/configs.py)，可直接修改。
+> 所有训练超参数集中管理在 [`config/train/`](config/train/) 目录（YAML 格式），推理参数在 [`config/model/inference.yaml`](config/model/inference.yaml)。可直接修改，无需改代码。
 
 ## 推理部署
 
@@ -465,13 +471,13 @@ train-defect \
 # 车载端（单模型）
 # 将 <时间戳> 替换为实际训练输出的时间戳
 subway-server --port 8001 \
-              --model output/defect_detector_<时间戳>_c3_finetune/weights/best.pt \
+              --model output/<时间戳>/c3_finetune/weights/best.pt \
               --mode vehicle
 
 # 地面端（双 GPU Ensemble + WBF 融合）
 subway-server --port 8001 \
-              --model output/defect_detector_<时间戳>_c3_finetune/weights/best.pt \
-              --model_b output/defect_detector_p2_<时间戳>_c3_finetune/weights/best.pt \
+              --model output/<时间戳>/c3_finetune/weights/best.pt \
+              --model_b output/<时间戳>_p2/c3_finetune/weights/best.pt \
               --mode ground
 ```
 
@@ -500,7 +506,7 @@ subway-server --port 8001 \
 
 ```bash
 # FP16 导出（推荐，车载端必备）
-export-tensorrt --model output/defect_detector_<时间戳>_c3_finetune/weights/best.pt --fp16
+export-tensorrt --model output/<时间戳>/c3_finetune/weights/best.pt --fp16
 
 # 自定义输出路径
 export-tensorrt --model best.pt --fp16 --output /path/to/model.engine
