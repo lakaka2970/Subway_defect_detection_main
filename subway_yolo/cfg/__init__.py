@@ -715,7 +715,7 @@ def handle_yolo_solutions(args: List[str]) -> None:
                 str(ROOT / "solutions/streamlit_inference.py"),
                 "--server.headless",
                 "true",
-                overrides.pop("model", "yolo26n.pt"),
+                overrides.pop("model", "yolo11n.pt"),
             ]
         )
     else:
@@ -941,7 +941,7 @@ def entrypoint(debug: str = "") -> None:
     # Model
     model = overrides.pop("model", DEFAULT_CFG.model)
     if model is None:
-        model = "yolo26n.pt"
+        model = "yolo11n.pt"
         LOGGER.warning(f"'model' argument is missing. Using default 'model={model}'.")
     overrides["model"] = model
     stem = Path(model).stem.lower()

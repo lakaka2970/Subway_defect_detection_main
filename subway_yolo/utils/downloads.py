@@ -460,6 +460,30 @@ def attempt_download_asset(
     else:
         # URL specified
         name = Path(parse.unquote(str(file))).name  # decode '%2F' to '/' etc.
+
+        # ── Redirect yolo26*/yoloe-26* → yolo11*/yoloe-11* ─────────────────
+        # The subway_yolo fork uses yolo11 architecture.  yolo26* model files
+        # do not exist as official releases; silently redirect to the correct
+        # yolo11* equivalent and resolve from yolo_weights/ first.
+        _BLOCKED_PREFIXES = ("yolo26", "yoloe-26")
+        if name.startswith(_BLOCKED_PREFIXES) and name.endswith(".pt"):
+            alt_name = name.replace("yolo26", "yolo11", 1).replace("yoloe-26", "yoloe-11", 1)
+            alt_file = file.parent / alt_name if file.parent != Path(".") else Path(alt_name)
+            LOGGER.warning(
+                "'%s' is not an official model — redirecting to '%s'. "
+                "Update your code to reference '%s' directly.",
+                name, alt_name, alt_name,
+            )
+            # Prefer yolo_weights/ copy first, then fall back to download
+            weights_dir = Path(SETTINGS["weights_dir"])
+            if (weights_dir / alt_name).exists():
+                LOGGER.info("Found '%s' in %s", alt_name, weights_dir)
+                return str(weights_dir / alt_name)
+            if alt_file.exists():
+                return str(alt_file)
+            name = alt_name
+            file = alt_file
+
         download_url = f"https://github.com/{repo}/releases/download"
         if str(file).startswith(("http:/", "https:/")):  # download
             url = str(file).replace(":/", "://")  # Pathlib turns :// -> :/
