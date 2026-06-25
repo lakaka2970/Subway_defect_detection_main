@@ -1,6 +1,11 @@
 # ============================================================================
-# C2 Full Training — 解冻全部层，完整训练 (v2 优化版)
+# C2 Full Training — 解冻全部层，完整训练  [LEGACY — 推荐用 pretrain/]
 # ============================================================================
+#
+# ⚠ LEGACY: 此配置保留向后兼容。新训练推荐使用现代五阶段配置:
+#     config/train/pretrain/stage2_scale_adaptation.yaml
+#     用法: train-defect --data ... --stages 1 2 3 --pretrain-config-dir
+#
 # 目标: mAP50 在 C1 基础上大幅提升
 #
 # 使用方式:

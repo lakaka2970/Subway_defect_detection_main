@@ -1,0 +1,54 @@
+# ============================================================================
+# Stage 4: Hard Negative Mining + Threshold Calibration
+# ============================================================================
+# 目标: 用 Stage 3 模型收集误检 crop, 低 lr 再训练提升 Precision
+#       然后每类单独搜索阈值 (Precision/Recall 双目标 ≥90%)
+# 初始化: Stage 3 best.pt
+# 数据: 自制 subway_crops (正样本) + 难负样本 crop (hard negatives)
+#       正样本 : 难负样本 = 1 : 1
+#
+# 难负样本采集重点:
+#   - 正常螺栓但反光
+#   - 正常开口销但边缘模糊
+#   - 绝缘子阴影
+#   - 线夹边缘
+#   - 切片边界伪影
+#   - 运动模糊区域
+#
+# 注意: 此阶段需要先运行 Stage 3 模型收集误检, 再构建 hard_negative 数据集
+# ============================================================================
+
+epochs: 30
+imgsz: 1280
+batch: 12
+optimizer: AdamW
+lr0: 0.00002
+lrf: 0.1
+momentum: 0.937
+weight_decay: 0.0005
+warmup_epochs: 3
+warmup_momentum: 0.8
+warmup_bias_lr: 0.1
+cos_lr: false
+patience: 8
+
+# ── 数据增强 (完全关闭 — 只学真实分布) ──
+mosaic: 0.0
+mixup: 0.0
+copy_paste: 0.0
+erasing: 0.0
+degrees: 0.0
+translate: 0.0
+scale: 0.0
+shear: 0.0
+perspective: 0.0
+flipud: 0.0
+fliplr: 0.0
+hsv_h: 0.0
+hsv_s: 0.0
+hsv_v: 0.0
+close_mosaic: 0
+auto_augment: randaugment
+
+# ── 冻结 backbone 前 70%, 不做大规模参数更新 ──
+freeze: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]

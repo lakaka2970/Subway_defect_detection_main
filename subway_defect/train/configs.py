@@ -60,6 +60,9 @@ class HardwareProfile:
         ("yolo11s", 640):   0.35,
         ("yolo11s", 1024):  0.80,
         ("yolo11s", 1280):  1.25,   # ~0.80 × (1280/1024)²
+        ("yolo11s-P2", 640):   0.45,
+        ("yolo11s-P2", 1024):  1.05,   # ~1.30 × yolo11s@1024 (extra P2 head + neck layers)
+        ("yolo11s-P2", 1280):  1.64,   # ~1.05 × (1280/1024)²
         ("yolo11m", 640):   0.55,
         ("yolo11m", 1024):  1.10,
         ("yolo11m", 1280):  1.72,   # ~1.10 × (1280/1024)²
@@ -207,6 +210,8 @@ class HardwareProfile:
             return "yolo11m-P2"
         if "yolo11m" in m:
             return "yolo11m"
+        if "yolo11s" in m and "p2" in m:
+            return "yolo11s-P2"
         return "yolo11s"
 
     def recommend_batch_size(
@@ -511,3 +516,30 @@ def load_inference_config() -> dict:
         Inference config dict (empty if file missing).
     """
     return _load_yaml(_CONFIG_DIR / "model" / "inference.yaml")
+
+
+def load_pretrain_config(stage_name: str) -> dict:
+    """Load a multi-source pretraining stage config from ``config/train/pretrain/``.
+
+    Args:
+        stage_name: E.g. ``"stage1_neck_head_warmup"``,
+            ``"stage2_scale_adaptation"``, ``"stage3_short_finetune"``,
+            ``"stage4_hard_negative"``, or one of the public-dataset
+            phase configs like ``"phase2_tiny_pretrain"``,
+            ``"phase3_public_defect"``.
+
+    Returns:
+        Config dict ready to unpack into ``YOLO.train(**config)``.
+
+    Raises:
+        FileNotFoundError: If the YAML file doesn't exist.
+    """
+    path = _CONFIG_DIR / "train" / "pretrain" / f"{stage_name}.yaml"
+    config = _load_yaml(path)
+    if not config:
+        raise FileNotFoundError(
+            f"Pretrain config not found: {path}\n"
+            f"Expected YAML files in config/train/pretrain/\n"
+            f"Run 'python tool/multi_source_pretrain_yaml.py' to generate them."
+        )
+    return config

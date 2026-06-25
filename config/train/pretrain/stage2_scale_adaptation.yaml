@@ -1,0 +1,50 @@
+# ============================================================================
+# Stage 2: Small-Object Scale Adaptation (modern 5-stage pipeline)
+# ============================================================================
+# 目标: 全解冻, 1280 原生分辨率 crop, 学习小目标尺度不变特征
+#       这是主训练阶段 — 贡献最大的 mAP 提升
+# 初始化: Stage 1 best.pt
+# 数据: 自制 subway_crops (1280 native resolution crops)
+# 模型: YOLO11s-P2-EMA-SimAM-Lite (推荐) 或 yolo11s-EMA-SimAM
+# 输入: 1280 (固定, 不推荐 YOLO 默认 ±50% 的大范围 multi_scale)
+#
+# 与 legacy C2 的区别:
+#   - AdamW + 自适应 LR 替代低效 SGD
+#   - 关闭 erasing/copy_paste (保护小目标)
+#   - mosaic 降到 0.2 (小目标不因 mosaic resize 进一步缩小)
+#   - close_mosaic=40 (13% 纯真实图像精调)
+#   - 自定义尺度集合 [1024, 1280, 1536] (不直接用 ±50% 到 640)
+#   - patience=40 (防止后半程过拟合)
+# ============================================================================
+
+epochs: 120
+imgsz: 1280
+batch: 12
+optimizer: AdamW
+lr0: 0.0008
+lrf: 0.02
+warmup_epochs: 8
+warmup_momentum: 0.5
+weight_decay: 0.0005
+cos_lr: true
+patience: 40
+
+# ── 数据增强 (弱增强, 保护小目标) ──
+# 不启用 multi_scale:true (随机 ±50% 可能产生 640 输入, 小目标又被压没)
+# 推荐固定 1280 或手动实现 [1024, 1280, 1536] 尺度集合
+mosaic: 0.2
+mixup: 0.0
+copy_paste: 0.0         # 小目标场景禁用
+erasing: 0.0            # 保护 8-10px 小目标不被随机擦除
+hsv_h: 0.015
+hsv_s: 0.6
+hsv_v: 0.5
+degrees: 5.0
+translate: 0.12
+scale: 0.5
+shear: 1.0
+perspective: 0.0003
+flipud: 0.0
+fliplr: 0.5
+close_mosaic: 40        # 最后 40 epoch (33%) 关闭 mosaic, 在真实图像上精调
+auto_augment: randaugment

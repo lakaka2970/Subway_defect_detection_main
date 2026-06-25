@@ -3,7 +3,7 @@
 
 Checks:
   - Every image has a label, every label has an image.
-  - Label format: 5 columns, class_id ∈ [0,6], coords ∈ [0,1].
+  - Label format: 5 columns, class_id ∈ valid range (from classes registry).
   - No empty label files.
   - Class distribution per split.
   - Train/val source-group isolation (no leakage).
@@ -24,6 +24,14 @@ from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
 _TILE_SUFFIX_RE = re.compile(r"_\d+_\d+$")
+
+# Import class registry for validation bounds
+try:
+    from subway_defect.classes import TRAIN_NC
+except ImportError:
+    TRAIN_NC = 7  # fallback for standalone execution
+
+MAX_CLASS_ID = TRAIN_NC - 1
 
 
 def extract_source_prefix(stem: str) -> str:
@@ -70,9 +78,9 @@ def _parse_one_label(args: Tuple[Path, set]) -> Dict:
             result["bad_format"] += 1
             continue
 
-        if cls_id < 0 or cls_id > 6:
+        if cls_id < 0 or cls_id > MAX_CLASS_ID:
             result["errors"].append(
-                f"class {cls_id} out of range in {lbl_path.name}")
+                f"class {cls_id} out of range [0, {MAX_CLASS_ID}] in {lbl_path.name}")
         if any(not (0.0 <= c <= 1.0) for c in coords):
             result["errors"].append(
                 f"coords out of [0,1] in {lbl_path.name}: {coords}")

@@ -1,6 +1,11 @@
 # ============================================================================
-# C1 Head Warmup — 冻结 backbone，仅训练检测头
+# C1 Head Warmup — 冻结 backbone，仅训练检测头  [LEGACY — 推荐用 pretrain/]
 # ============================================================================
+#
+# ⚠ LEGACY: 此配置保留向后兼容。新训练推荐使用现代五阶段配置:
+#     config/train/pretrain/stage1_neck_head_warmup.yaml
+#     用法: train-defect --data ... --stages 1 2 3 --pretrain-config-dir
+#
 # 目标: mAP50 > 0.30 后进入 C2
 #
 # 使用方式:

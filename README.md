@@ -26,13 +26,14 @@
 ```
 Subway_defect_detection_main/
 ├── subway_defect/                    # 项目主包
-│   ├── modules/                      # EMA、SimAM 注意力模块
-│   ├── models/                       # 模型 YAML 配置文件（3 个变体）
+│   ├── modules/                      # EMA、SimAM、ECA 注意力模块
+│   ├── models/                       # 模型 YAML 配置文件（4 个变体）
 │   ├── pipeline/                     # 推理管道（切片器、两阶段、WBF 融合）
-│   ├── train/                        # 训练模块（超参数预设、CLI 脚本）
+│   ├── train/                        # 训练模块（超参数预设、CLI 脚本、回调系统）
 │   ├── augmentations/                # 数据增强（场景模拟、CopyPaste）
 │   ├── deployment/                   # 部署（TensorRT 导出、FastAPI 服务）
 │   ├── synthetic/                    # 合成数据生成（Inpainting）
+│   ├── classes.py                    # 缺陷类别中央注册表 (单一事实来源)
 │   └── docs/                         # 设计文档 + 前后端接口规范
 │       ├── 地铁接触网缺陷检测AI算法设计文档.md
 │       ├── plans/                    # 实现计划
@@ -49,7 +50,7 @@ Subway_defect_detection_main/
 │   ├── utils/                        # 核心工具函数
 │   └── optim/                        # 优化器
 ├── tests/                            # 测试套件
-│   ├── test_attention_modules.py     # EMA/SimAM 单元 + 模型集成
+│   ├── test_attention_modules.py     # EMA/SimAM/ECA 单元 + 模型集成
 │   ├── test_augmentations.py         # 增强管道 + 训练配置
 │   └── test_pipeline.py              # 切片器 + WBF 融合 + 部署
 ├── scripts/
@@ -57,6 +58,7 @@ Subway_defect_detection_main/
 ├── tool/                             # 数据集工具脚本
 │   ├── prepare_dataset.py            # 一键自制数据集准备
 │   ├── split_dataset.py              # 按源图分组 train/val 划分
+│   ├── generate_native_crops.py      # 原生分辨率 crop 生成 (P0 结构修复)
 │   ├── validate_dataset.py           # 数据集完整性校验
 │   ├── multi_source_dataset_builder.py   # 多源公开数据集构建器 (AutoDL)
 │   ├── multi_source_pretrain_yaml.py     # 多阶段训练配置生成器
@@ -94,10 +96,11 @@ python -c "from subway_defect.modules.EMA import EMA; from subway_defect.modules
 ### 2. 验证模型构建
 
 ```bash
-# 验证三个模型 YAML 均可正常构建
+# 验证四个模型 YAML 均可正常构建
 python -c "
 from subway_yolo import YOLO
 for cfg in ['subway_defect/models/yolo11s-EMA-SimAM.yaml',
+            'subway_defect/models/yolo11s-P2-EMA-SimAM.yaml',
             'subway_defect/models/yolo11m-EMA-SimAM.yaml',
             'subway_defect/models/yolo11m-P2-SimAM.yaml']:
     model = YOLO(cfg)
@@ -159,12 +162,21 @@ pytest tests/ --slow -v
 
 | 位置 | 模块 | 参数量 | 延迟 | 论文 |
 | --- | --- | --- | --- | --- |
-| P3 检测分支 | **EMA** | ~200 | +0.4ms | ICASSP 2023 |
-| P4/P5 检测分支 | **SimAM** | **0** | +0.1ms | ICML 2021 |
+| P2 检测分支 (四尺度模型) | **SimAM** | **0** | +0.1ms | ICML 2021 |
+| P3 检测分支 | **EMA + SimAM** (串联) | ~200 + 0 | +0.5ms | ICASSP 2023 + ICML 2021 |
+| P4 检测分支 | **SimAM** | **0** | +0.1ms | ICML 2021 |
+| P5 (三尺度) / P5 (四尺度) | 无 / **ECA** | 0 / ~100 | — / +0.1ms | CVPR 2020 |
 | Backbone 末端 | C2PSA（保留） | — | — | YOLO11 原生 |
+
+**v2 注意力布局 (2025-06-25 优化)**:
+- **P2=SimAM**: 微小缺陷定位主力 — 零参数能量注意力, 识别与邻域"显著不同"的神经元
+- **P3=EMA+SimAM**: 最关键的检测尺度 — EMA 提供 X/Y 方向空间编码, SimAM 进一步增强局部异常敏感性
+- **P4=SimAM**: 中等目标上下文辅助
+- **P5=无/ECA**: 32× 下采样下缺陷不可见, 移除注意力以避免放大背景结构噪声
 
 - **EMA（Efficient Multi-Scale Attention）**：X/Y 双方向池化，保留空间位置信息，增强对小目标（螺栓、开口销 ~8×8 px）的定位能力
 - **SimAM（Simple Parameter-Free Attention）**：基于神经科学空间抑制理论，零参数 → 零过拟合风险，对局部异常（如螺栓缺失）天然敏感
+- **ECA（Efficient Channel Attention）**：1D 卷积自适应核, 极轻量通道注意力 (< 100 参数), 用于 P5 替代 SimAM
 
 ### 双卡异构 Ensemble（地面端）
 
@@ -190,13 +202,14 @@ GPU 0: YOLO11m-EMA-SimAM        GPU 1: YOLO11m-P2-SimAM
 | 模型 | 用途 | 参数量 | GFLOPs | 检测尺度 | 注意力 |
 |------|------|--------|--------|---------|--------|
 | YOLO11n-ROI | Stage 1 结构区域 | 2.6M | 6.6 | P3/P4/P5 | 无 |
-| YOLO11s-EMA-SimAM | 车载端主方案 | 9.5M | 21.7 | P3/P4/P5 | EMA + SimAM |
-| YOLO11m-EMA-SimAM | 地面端 GPU 0 | 20.1M | 68.5 | P3/P4/P5 | EMA + SimAM + ECA |
-| YOLO11m-P2-SimAM | 地面端 GPU 1 | ~25M | ~90 | P2/P3/P4/P5 | SimAM ×4 |
+| YOLO11s-EMA-SimAM | 车载端主方案 (三尺度) | ~9.5M | ~22 | P3/P4/P5 | P3:EMA+SimAM, P4:SimAM |
+| **YOLO11s-P2-EMA-SimAM** | **车载端 P2 方案** (推荐) | **~9.8M** | **~30** | **P2/P3/P4/P5** | **P2:SimAM, P3:EMA, P4:SimAM** |
+| YOLO11m-EMA-SimAM | 地面端 GPU 0 | 20.1M | 68.5 | P3/P4/P5 | P3:EMA, P4:SimAM, P5:ECA |
+| YOLO11m-P2-SimAM | 地面端 GPU 1 | ~25M | ~90 | P2/P3/P4/P5 | P2:SimAM, P3:SimAM, P4:SimAM, P5:ECA |
 
 ### 选型策略
 
-**车载端（单 RTX 4090，≤ 10s）**: 主方案 YOLO11s-EMA-SimAM (FP16)，备选 YOLO11m-EMA-SimAM (INT8)
+**车载端（单 RTX 4090，≤ 10s）**: 推荐 yolo11s-P2-EMA-SimAM (四尺度小目标增强), 备选 yolo11s-EMA-SimAM (三尺度)
 
 **地面端（双 RTX 4090，提报率 ≤ 5%）**: GPU 0 YOLO11m-EMA-SimAM + GPU 1 YOLO11m-P2-SimAM → WBF 融合
 
@@ -245,6 +258,42 @@ GPU 0: YOLO11m-EMA-SimAM        GPU 1: YOLO11m-P2-SimAM
 
 ---
 
+### 现代五阶段训练 (推荐)
+
+基于分析报告对 C2 阶段"几乎零收益"的根因诊断, 推荐使用 `config/train/pretrain/` 下的五阶段配置:
+
+```bash
+# Step 0: 生成原生分辨率 crop (P0 结构修复 — 解决缺陷从 40px 缩到 8px 问题)
+python tool/generate_native_crops.py --crop-size 1024
+
+# Step 1-3: 现代五阶段训练 (每阶段可独立使用不同数据集)
+train-defect --data data/subway_crops/subway_crops.yaml \
+    --model subway_defect/models/yolo11s-P2-EMA-SimAM.yaml \
+    --coco_pretrain --device 0 --stages 1 2 3 --pretrain-config-dir
+```
+
+| 阶段 | 说明 | Epochs | 输入 | 关键配置 |
+|------|------|--------|------|---------|
+| S0 (可选) | 数据完整性检查 + 标签统计 + 过拟合测试 | — | — | `--stages 0` |
+| S1 | Neck + Head Warmup: 冻结 backbone 60% | 50 | 1024 | AdamW, mosaic=0.2, 无 erasing |
+| S2 | 小目标尺度适应: 全解冻, 主训练 | 120 | 1280 | AdamW, lr=8e-4, mosaic=0.2, patience=40 |
+| S3 | 短微调: 冻结 backbone 70% | 30 | 1280 | AdamW, lr=3e-5, patience=8, 每 epoch 保存 |
+| S4 (可选) | Hard Negative Mining + 每类阈值校准 | 30 | 1280 | AdamW, lr=2e-5, 零增强 |
+
+**训练过程自动输出**:
+- `training_dynamics.csv` — 每 epoch 的 train/val loss 分量 (box/cls/dfl)
+- `per_class_metrics.csv` — 每类 AP 演进曲线
+- `training_report.json` — 最终汇总 (per-class AP + 尺寸分组 + best checkpoints)
+- `hard_examples.json` — 误检/漏检样本统计
+
+**Legacy 三阶段** (向后兼容, 不加 `--stages` 时默认):
+
+```bash
+train-defect --data datasets/defects/defect_data.yaml --coco_pretrain --device 0
+```
+
+---
+
 ### Phase 1: 数据集准备
 
 训练前必须完成**两类数据集**的构建：自制接触网数据集（Phase 1A）和多源公开工业缺陷数据集（Phase 1B）。
@@ -258,6 +307,9 @@ GPU 0: YOLO11m-EMA-SimAM        GPU 1: YOLO11m-P2-SimAM
 ```bash
 # 一键执行：classes.txt 修复 → YAML 生成 → train/val 划分 → 场景增强 → 合成缺陷
 python tool/prepare_dataset.py
+
+# 生成原生分辨率 crop (推荐替代整图 resize — 见分析报告)
+python tool/generate_native_crops.py --crop-size 1024
 
 # 校验数据集完整性
 python tool/validate_dataset.py
