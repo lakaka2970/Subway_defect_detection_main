@@ -36,6 +36,9 @@ Subway_defect_detection_main/
 │   └── docs/                         # 设计文档 + 前后端接口规范
 │       ├── 地铁接触网缺陷检测AI算法设计文档.md
 │       ├── plans/                    # 实现计划
+│       │   ├── 2026-06-25-Multi-source-datasets-training-recomendation.md
+│       │   ├── 2026-06-25-Structure-improvement-plam.md
+│       │   └── 2026-06-25-analysis-feature-learning-efficiency.md
 │       └── 开发方案(5.30)/            # 系统开发方案
 ├── subway_yolo/                      # Vendored YOLO 框架（已精简）
 │   ├── engine/                       # Model、Trainer、Predictor、Validator、Exporter
@@ -51,6 +54,14 @@ Subway_defect_detection_main/
 │   └── test_pipeline.py              # 切片器 + WBF 融合 + 部署
 ├── scripts/
 │   └── setup_autodl.sh               # AutoDL 云平台环境配置
+├── tool/                             # 数据集工具脚本
+│   ├── prepare_dataset.py            # 一键自制数据集准备
+│   ├── split_dataset.py              # 按源图分组 train/val 划分
+│   ├── validate_dataset.py           # 数据集完整性校验
+│   ├── multi_source_dataset_builder.py   # 多源公开数据集构建器 (AutoDL)
+│   ├── multi_source_pretrain_yaml.py     # 多阶段训练配置生成器
+│   ├── generate_scene_augmentations.py   # 场景增强（隧道/日照/模糊）
+│   └── generate_synthetic_defects.py     # Inpainting 合成缺陷
 ├── pyproject.toml                    # 项目配置（包名 subway_defect）
 ├── README.md                         # 本文件
 ├── SPECIFICATION.md                  # 完整规格说明书
@@ -193,21 +204,42 @@ GPU 0: YOLO11m-EMA-SimAM        GPU 1: YOLO11m-P2-SimAM
 
 ### 训练总览
 
-本项目采用 **"COCO 预训练基础能力 → 自制数据集迁移学习 → 场景微调"** 的三阶段训练策略：
+本项目采用 **"COCO 通用预训练 → 公开工业缺陷中间域预训练 → 自制接触网数据领域适配 → 阈值校准"** 的多源分层训练策略：
 
 ```
-COCO 2017 (118K 图像, 80 类)                   自制数据集 (~1880 张, 7 类)
-        │                                                │
-        ▼                                                ▼
-  ┌──────────┐    Stage C1 (50 ep)    ┌──────────┐    Stage C2 (200 ep)    ┌──────────┐    Stage C3 (50 ep)    ┌──────────┐
-  │ 预训练权重 │ ──────────────────→  │ Head 预热 │ ────────────────────→  │  全量训练  │ ────────────────────→  │   微调    │
-  │ yolo11s.pt│   冻结 backbone        │ best.pt   │   解冻 + 强增强        │ best.pt   │   弱增强 + 低 LR       │ 最终模型  │
-  └──────────┘                        └──────────┘                        └──────────┘                        └──────────┘
-   mAP50: 0.55 (COCO)                  mAP50 > 0.30                        mAP50 > 0.70                        mAP50 ≥ 0.75
-                                       Box Loss < 1.5                      Precision > 0.85                    Precision ≥ 0.90
-                                       ~0.5h (RTX 4090)                    Recall > 0.85                       Recall ≥ 0.90
-                                                                           ~4h (RTX 4090)                      ~0.5h (RTX 4090)
+┌────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│                              多源分层训练管线 (Multi-Source Training Pipeline)                         │
+├────────────────────────────────────────────────────────────────────────────────────────────────────┤
+│                                                                                                    │
+│  COCO 2017              公开工业缺陷数据集                   自制接触网数据                           │
+│  (118K, 80 类)          DeepPCB + NEU-DET + GC10-DET        (~1880 crop, 7 类)                     │
+│       │                       │                                   │                                │
+│       ▼                       ▼                                   ▼                                │
+│  ┌──────────┐   Phase 2   ┌──────────────┐   Phase 4-5   ┌──────────────┐   Phase 6-8   ┌────────┐ │
+│  │ 基础权重  │ ─────────→  │ 公开缺陷预训练 │ ────────────→ │ 自制数据训练   │ ────────────→ │ 部署模型 │ │
+│  │ yolo11s  │   (可选:     │ generic_defect│   neck+head   │ 7 类接触网缺陷 │   短微调+     │        │ │
+│  │ .pt      │   Phase 3    │  120 epochs   │    适配       │ 120 epochs    │   Hard Neg    │        │ │
+│  └──────────┘   TT100K    └──────────────┘               └──────────────┘               └────────┘ │
+│                   P2 头                                                                           │
+│                   预热                                                                             │
+│                                                                                                    │
+│  核心策略:                                                                                          │
+│  • 所有公开缺陷数据集统一合并为 generic_defect 单类 — 让模型专注学习"异常区域在哪里"                    │
+│  • 自制数据采用 1024/1280 原生分辨率 ROI crop，替代整图 resize                                        │
+│  • 训练 → 短微调 → Hard Negative Mining → 每类阈值校准 五阶段闭环                                    │
+│  • 每阶段有可独立验证的验收标准，问题可精确追溯                                                       │
+└────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
+
+**分层训练 vs 直接训练的优势**：
+
+| 对比维度 | 直接训练 (原 C1→C2→C3) | 多源分层训练 (推荐) |
+|---------|----------------------|-------------------|
+| 数据规模 | 仅自制 ~1880 张 | 公开数万张 + 自制 ~1880 张 |
+| Backbone 特征 | COCO 通用特征 | COCO → 工业缺陷纹理 → 接触网结构 |
+| 小目标处理 | P3 特征图 ~1×1 px (不可见) | P2 头 + 原生分辨率 crop (~8-10 px 可见) |
+| C2 阶段收益 | +0.003~0.018 mAP50 (几乎零收益) | 预期 +0.10~0.15 mAP50 |
+| 类别语义冲突 | 无 (仅自制 7 类) | 无 (generic_defect 避免冲突) |
 
 > **核心原则**: 每一阶段产出可独立验证，问题可精确追溯。如果某一阶段指标不达标，立即排查该阶段的问题，不进入下一阶段。
 
@@ -215,7 +247,13 @@ COCO 2017 (118K 图像, 80 类)                   自制数据集 (~1880 张, 7 
 
 ### Phase 1: 数据集准备
 
-训练前必须完成数据集构建。项目提供了 `tool/` 目录下的一键准备脚本：
+训练前必须完成**两类数据集**的构建：自制接触网数据集（Phase 1A）和多源公开工业缺陷数据集（Phase 1B）。
+
+---
+
+#### Phase 1A: 自制数据集准备
+
+项目提供了 `tool/` 目录下的一键准备脚本：
 
 ```bash
 # 一键执行：classes.txt 修复 → YAML 生成 → train/val 划分 → 场景增强 → 合成缺陷
@@ -250,6 +288,124 @@ python tool/validate_dataset.py
 
 ---
 
+#### Phase 1B: 多源公开数据集构建（AutoDL 云端）
+
+本方案推荐使用 **DeepPCB + GC10-DET + NEU-DET** 三个公开工业缺陷数据集作为中间域预训练。项目提供 `multi_source_dataset_builder.py` 一键完成扫描→下载→格式转换→合并全流程。
+
+**数据集价值评估**：
+
+| 数据集 | 规模 | 缺陷类型 | 对项目的价值 | 优先级 |
+|--------|------|---------|-------------|--------|
+| **DeepPCB** | 1,500 对图 | 开路、短路、缺口、毛刺、针孔、多余铜 | ⭐最高 — PCB 规则结构缺失 ≈ 螺栓/开口销缺失 | 1 |
+| **GC10-DET** | 3,570 张 | 冲孔、焊缝、月牙痕、水渍、油渍、夹杂、划痕等 10 类 | 高 — 金属表面缺陷纹理 | 1 |
+| **NEU-DET** | 1,800 张 | 轧入氧化皮、斑块、裂纹、点蚀、夹杂、划痕 6 类 | 高 — 经典工业缺陷基准 | 1 |
+| **TT100K** | 100K 张 | 交通标志 (221 类) | 中高 — 小目标定位训练 (仅 P2 头) | 2 (可选) |
+| **Insulator Defect** | ~917 张 | 绝缘子破损/闪络 | 中高 — 语义域最近 | 2 (可选) |
+| **MVTec AD / VisA** | 5K+/10K+ 张 | 异常检测 (mask) | 中 — 需 mask→bbox 转换 | 3 (可选) |
+
+**关键设计决策 — 方案 B：全合并为 `generic_defect`**：
+
+所有公开数据集的缺陷类别统一映射为单一类别 `generic_defect`（class_id=0），好处：
+1. 避免公开类别与接触网 7 类产生语义冲突
+2. 让模型专注学习"异常区域在哪里"而非"是什么类型的异常"
+3. Box 回归分支和 Neck 特征可完整迁移到最终模型
+4. 对小数据集场景更稳定，不易过拟合
+
+```bash
+# ===================== AutoDL 云端操作步骤 =====================
+
+# Step 1 — 扫描 /root/autodl-pub 中已有的公开数据集
+python tool/multi_source_dataset_builder.py --scan-only
+
+# Step 2 — 完整构建（扫描 + 下载缺失 + 统一转 YOLO + 合并）
+#   DeepPCB:   git clone https://github.com/tangsanli5201/DeepPCB.git
+#   GC10-DET:  kaggle datasets download -d alex000kim/gc10det
+#   NEU-DET:   kaggle datasets download -d kaustubhdikshit/neu-surface-defect-database
+python tool/multi_source_dataset_builder.py
+
+# 如果 Kaggle CLI 未配置，仅使用 autodl-pub 已有数据
+python tool/multi_source_dataset_builder.py --no-download
+
+# 只构建特定数据集
+python tool/multi_source_dataset_builder.py --datasets deeppcb neu_det gc10_det
+
+# 启用可选数据集（TT100K、绝缘子、MVTec AD、VisA）
+python tool/multi_source_dataset_builder.py --enable tt100k insulator_defect
+
+# Dry-run：预览操作计划不执行
+python tool/multi_source_dataset_builder.py --dry-run
+```
+
+**各数据集获取通道（已验证 2025-06）**：
+
+| 数据集 | 获取方式 | 命令/URL |
+|--------|---------|---------|
+| COCO | AutoDL 公有数据 | `/root/autodl-pub/coco2017/` (必有) |
+| DeepPCB | GitHub | `git clone https://github.com/tangsanli5201/DeepPCB.git` |
+| GC10-DET | Kaggle | `kaggle datasets download -d alex000kim/gc10det` |
+| NEU-DET | Kaggle | `kaggle datasets download -d kaustubhdikshit/neu-surface-defect-database` |
+| TT100K | 清华官网 / Ultralytics | `http://cg.cs.tsinghua.edu.cn/traffic-sign/data_model_code/data.zip` |
+| Insulator Defect | Roboflow (需 API Key) | `pourya-shojaei/insatance-segmentation-insulator` |
+| MVTec AD | TIB LDM | `https://service.tib.eu/ldmservice/dataset/mvtec-anomaly-detection--ad--dataset` |
+| VisA | AWS S3 公开桶 | `aws s3 cp --no-sign-request s3://amazon-visual-anomaly/VisA_20220922.tar ./` |
+
+**产出目录结构**：
+
+```
+data/multi_datasets/
+├── public/                          # 各数据集独立目录（YOLO 格式）
+│   ├── deeppcb/images/{train,val}/ labels/{train,val}/
+│   ├── gc10_det/...
+│   └── neu_det/...
+├── mixed_pretrain/                  # 汇总 symlink + data.yaml
+│   ├── images/{train,val}/          # → 所有 public 图像的 symlink
+│   ├── labels/{train,val}/          # → 所有 public 标签的 symlink
+│   └── data.yaml                    # nc:1, names:["generic_defect"]
+└── _downloads/                      # 原始下载缓存
+```
+
+**✅ 验证通过标准**：
+
+```bash
+# 确认 mixed_pretrain 目录完整
+ls data/multi_datasets/mixed_pretrain/data.yaml
+ls data/multi_datasets/mixed_pretrain/images/train/ | wc -l   # 应 > 5000
+```
+
+---
+
+#### Phase 1C: 生成多阶段训练配置
+
+数据集构建完成后，使用 `multi_source_pretrain_yaml.py` 为各训练阶段生成对应的 YAML 配置文件：
+
+```bash
+# 生成所有可用的训练阶段配置
+python tool/multi_source_pretrain_yaml.py
+
+# 仅生成指定阶段
+python tool/multi_source_pretrain_yaml.py --phases 2 3 4
+
+# 自定义数据集根目录
+python tool/multi_source_pretrain_yaml.py --root data/multi_datasets
+
+# Dry-run：预览配置内容不写入文件
+python tool/multi_source_pretrain_yaml.py --dry-run
+```
+
+**产出文件（输出至 `config/train/pretrain/`）**：
+
+| 文件 | 对应阶段 | 用途 | 类别数 |
+|------|---------|------|--------|
+| `phase2_tiny_pretrain.yaml` | Phase 2 (可选) | TT100K P2 小目标头预热 | nc:1 `tiny_object` |
+| `phase3_public_defect.yaml` | Phase 3 | DeepPCB+NEU+GC10 工业缺陷预训练 | nc:1 `generic_defect` |
+| `phase4_neck_head_adapt.yaml` | Phase 4 | 公开缺陷域 → 接触网 7 类适配 | nc:7 自制类别 |
+| `phase5_main_training.yaml` | Phase 5 | 1280 原生 crop 主训练 | nc:7 自制类别 |
+| `phase6_short_finetune.yaml` | Phase 6 | 弱增强短微调 + 早停 | nc:7 自制类别 |
+
+> 每个 YAML 文件均包含对应阶段的推荐超参数、增强策略和冻结方案，可直接用于训练。
+
+---
+
 ### Phase 2: COCO 预训练权重
 
 YOLO11 在 COCO 2017 数据集（118K 图像，80 类通用目标）上预训练，获得了强大的通用视觉特征提取能力。我们将其作为特征基础，在自制地铁数据集上进行迁移学习。
@@ -279,7 +435,103 @@ python -c "from subway_yolo import YOLO; m = YOLO('yolo11s.pt'); print('OK:', su
 
 ---
 
-### Phase 3: Stage C1 — Head 预热（50 epochs）
+### Phase 2B: 公开缺陷数据中间域预训练（多源方案新增）
+
+> **本阶段为多源分层训练方案的核心新增步骤。**如果 AutoDL 环境尚未构建多源数据集，请先完成 [Phase 1B](#phase-1b-多源公开数据集构建autodl-云端)。
+
+**训练原理**：在 COCO 通用预训练基础上，使用 DeepPCB + NEU-DET + GC10-DET 三个公开工业缺陷数据集进行中间域预训练。所有缺陷类别统一映射为 `generic_defect` 单类，让 backbone/neck 学习工业异常纹理表征，避免公开类别与接触网 7 类产生语义冲突。
+
+```
+COCO yolo11s.pt → 公开缺陷预训练 (generic_defect, 120 epochs) → public_defect_pretrain.pt
+     (可选: 先跑 Phase 2A TT100K P2 头预热 80 epochs)
+```
+
+**训练命令**：
+
+```bash
+# 使用 Phase 1C 生成的配置直接训练
+train-defect \
+    --data config/train/pretrain/phase3_public_defect.yaml \
+    --model subway_defect/models/yolo11s-EMA-SimAM.yaml \
+    --coco_pretrain \
+    --device 0 \
+    --name public_defect_pretrain
+
+# 如果有 P2 模型且已完成 TT100K 预热
+train-defect \
+    --data config/train/pretrain/phase3_public_defect.yaml \
+    --model subway_defect/models/yolo11m-P2-SimAM.yaml \
+    --pretrained weights/p2_tiny_pretrain.pt \
+    --device 0 \
+    --name public_defect_pretrain
+```
+
+| 关键参数 | 值 | 说明 |
+|----------|-----|------|
+| `epochs` | 120 | 充分的中间域预训练 |
+| `imgsz` | 1024 | 与后续自制数据训练一致 |
+| `optimizer` | AdamW | 自适应学习率，补偿 COCO→defect 域偏移 |
+| `lr0` → `lrf` | 0.001 → 0.00002 | Cosine 衰减 |
+| `mosaic` | 0.2 | 降低 Mosaic，保护小缺陷不被破坏 |
+| `mixup` / `copy_paste` / `erasing` | 0 / 0 / 0 | 关闭混合增强，训练干净缺陷特征 |
+| `close_mosaic` | 30 | 最后 30 epoch 在真实图像上精调 |
+| `freeze` | `[0..10]` (前 10 epoch) | 先冻结 backbone，后解冻全模型 |
+
+**训练策略**：
+1. **前 10 epoch**：冻结 backbone 前半部分，仅训练 neck + detect head
+2. **第 11 epoch 后**：解冻全部层，backbone 使用较低学习率（分层 LR 或全局低 LR）
+3. **验收重点**：不追求 mAP50 极致数值，重点观察训练是否稳定、P2/P3 分支是否有效、loss 是否正常下降
+
+**✅ 验证通过标准**：
+
+| 指标 | 目标值 | 说明 |
+|------|--------|------|
+| best.pt 已保存 | 文件存在 | `ls output/<时间戳>/public_defect_pretrain/weights/best.pt` |
+| 训练 loss | 稳定下降，无震荡 | 检查 `results.csv` 中的 `train/box_loss` 趋势 |
+| mAP50 | 不必追求极致 | 公开数据 mAP50 仅供参考，重点看迁移效果 |
+| 输出权重 | `weights/public_defect_pretrain.pt` | 后续 Phase 4/5 的初始化权重 |
+
+---
+
+### Phase 2A (可选): TT100K P2 小目标头预热
+
+> 仅当使用 **P2 四尺度模型**（如 `yolo11s-P2-EMA-SimAM-Lite`）时才需要此阶段。
+
+**训练原理**：新增的 P2 检测分支（stride=4）没有 COCO 预训练权重。使用 TT100K 交通标志数据集（大量小目标）对 P2 头进行短期预热，让 P2 分支先学会小目标定位。
+
+```bash
+# 使用 Ultralytics 内置 TT100K 自动下载
+train-defect \
+    --data TT100K.yaml \
+    --model subway_defect/models/yolo11s-P2-EMA-SimAM.yaml \
+    --coco_pretrain \
+    --device 0 \
+    --epochs 80 \
+    --imgsz 1024 \
+    --name p2_tiny_pretrain
+
+# 或使用 Phase 1C 生成的配置
+train-defect \
+    --data config/train/pretrain/phase2_tiny_pretrain.yaml \
+    --model subway_defect/models/yolo11s-P2-EMA-SimAM.yaml \
+    --coco_pretrain \
+    --device 0 \
+    --name p2_tiny_pretrain
+```
+
+| 关键参数 | 值 | 说明 |
+|----------|-----|------|
+| `epochs` | 50–80 | 短期预热即可 |
+| `imgsz` | 1024 | 匹配后续训练分辨率 |
+| `optimizer` | AdamW | 与新架构磨合 |
+| `mosaic` | 0.2 | 适度 Mosaic |
+| `close_mosaic` | 20 | 最后 20 epoch 纯净训练 |
+
+**✅ 验证通过标准**：`best.pt` 保存且验证 loss 正常下降。输出权重用于 Phase 2B 的 `--pretrained` 参数。
+
+---
+
+### (保留) Phase 3: 自制数据 Neck/Head 领域适配
 
 **训练原理**：冻结 backbone 全部 11 层（`model.0 ~ model.10`），仅训练检测头（YOLO Head + EMA/SimAM 注意力）。COCO 学到的通用特征（边缘、纹理、形状）保持不变，检测头快速适应地铁接触网的特定目标尺寸和分布。
 
@@ -437,13 +689,20 @@ train-defect \
 
 | # | 阶段 | 操作 | 预期结果 | 实际结果 | ✅ |
 |---|------|------|---------|---------|---|
-| 1 | 数据准备 | `python tool/prepare_dataset.py` | ~1880 train + ~100 val | | |
-| 2 | 数据校验 | `python tool/validate_dataset.py` | `[PASS]` | | |
-| 3 | COCO 权重 | `python -c "from subway_yolo import YOLO; YOLO('yolo11s.pt')"` | 无报错 | | |
-| 4 | C1 预热 | `train-defect ... --coco_pretrain --skip_full --skip_finetune` | mAP50 > 0.30, Box Loss < 1.5<br>输出: `output/<ts>/c1_warmup/` | | |
-| 5 | C2 主训练 | `train-defect ... --pretrained <c1_best> --skip_warmup --skip_finetune` | mAP50 > 0.70, P/R > 0.85<br>输出: `output/<ts>/c2_full/` | | |
-| 6 | C3 微调 | `train-defect ... --pretrained <c2_best> --skip_warmup --skip_full` | mAP50 ≥ 0.75, P/R ≥ 0.90<br>输出: `output/<ts>/c3_finetune/` | | |
-| 7 | 推理验证 | `subway-server --model <final.pt> --mode vehicle` | 推理耗时 ≤ 10s, 结果正确 | | |
+| 1A | 自制数据准备 | `python tool/prepare_dataset.py` | ~1880 train + ~100 val | | |
+| 1B | 数据校验 | `python tool/validate_dataset.py` | `[PASS]` | | |
+| 1C | 多源数据扫描 | `python tool/multi_source_dataset_builder.py --scan-only` | 列出 autodl-pub 中可用数据集 | | |
+| 1D | 多源数据构建 | `python tool/multi_source_dataset_builder.py` | `data/multi_datasets/mixed_pretrain/data.yaml` 存在 | | |
+| 1E | 训练配置生成 | `python tool/multi_source_pretrain_yaml.py` | `config/train/pretrain/phase3_public_defect.yaml` 存在 | | |
+| 2 | COCO 权重 | `python -c "from subway_yolo import YOLO; YOLO('yolo11s.pt')"` | 无报错 | | |
+| 2A | [可选] TT100K P2 预热 | `train-defect --data config/train/pretrain/phase2_tiny_pretrain.yaml ...` | best.pt 保存, loss 正常下降 | | |
+| 2B | 公开缺陷预训练 | `train-defect --data config/train/pretrain/phase3_public_defect.yaml ...` | mAP50 参考值, loss 稳定下降<br>输出: `weights/public_defect_pretrain.pt` | | |
+| 3 | Neck/Head 适配 | `train-defect --data config/train/pretrain/phase4_neck_head_adapt.yaml ...` | mAP50 > 0.35, Recall 明显提升 | | |
+| 4 | 主训练 (C2) | `train-defect --data config/train/pretrain/phase5_main_training.yaml ...` | mAP50 > 0.70, P/R > 0.85<br>输出: `output/<ts>/main/` | | |
+| 5 | 短微调 (C3) | `train-defect --data config/train/pretrain/phase6_short_finetune.yaml ...` | mAP50 ≥ 0.75, P/R ≥ 0.90<br>输出: `output/<ts>/finetune/` | | |
+| 6 | 推理验证 | `subway-server --model <final.pt> --mode vehicle` | 推理耗时 ≤ 10s, 结果正确 | | |
+
+> **多源训练关键路径**: 1A→1B→2→2B→3→4→5→6。如果 AutoDL 环境不可用或只需快速验证，可使用原 C1→C2→C3 路径 (1A→1B→2→3→4→5→6，跳过 1C/1D/1E/2B)。
 
 ---
 
@@ -460,6 +719,11 @@ train-defect \
 | 训练意外中断 | 断电/超时 | 从最近 checkpoint 恢复：`--pretrained output/.../weights/last.pt --skip_warmup` |
 | 增强图片效果异常 | 场景增强参数不当 | 预览增强效果：`python -c "from subway_defect.augmentations.scene import *; ..."` 检查输出 |
 | 合成缺陷区域不自然 | Inpainting 修复痕迹明显 | 降低目标类 bbox 面积（仅对大目标 inpainting 效果较好） |
+| `multi_source_dataset_builder.py` 找不到 autodl-pub | AutoDL 实例未挂载公有数据 | 在 AutoDL 控制台"公开数据"菜单搜索并挂载；或使用 `--no-download` 跳过 |
+| Kaggle 下载失败 | 未配置 Kaggle API Key | `pip install kaggle; kaggle configure` 或手动下载后放入 `_downloads/` |
+| DeepPCB 标注解析为空 | GitHub zip 结构与预期不同 | 检查 `PCBData/group*/` 目录是否存在；`--dry-run` 预览 |
+| 公开预训练后 mAP 反而下降 | 域偏移过大或类别语义冲突 | 确认使用 `generic_defect` 单类合并（方案 B）；降低公开预训练 epochs |
+| P2 小目标头训练不收敛 | P2 分支无 COCO 预训练权重 | 先跑 Phase 2A (TT100K P2 预热 80 epochs) 再进 Phase 2B |
 
 > 所有训练超参数集中管理在 [`config/train/`](config/train/) 目录（YAML 格式），推理参数在 [`config/model/inference.yaml`](config/model/inference.yaml)。可直接修改，无需改代码。
 
@@ -582,6 +846,9 @@ synthesize-defects --images datasets/images/train/ \
 - [实现计划 1: 核心模型](subway_defect/docs/plans/2026-06-23-plan-1-core-model-architecture.md)
 - [实现计划 2: 训练管道](subway_defect/docs/plans/2026-06-23-plan-2-training-pipeline.md)
 - [实现计划 3: 推理引擎](subway_defect/docs/plans/2026-06-23-plan-3-inference-engine.md)
+- [📊 分析: 模型特征学习效率诊断](docs/plans/2026-06-25-analysis-feature-learning-efficiency.md) — C2 零收益根因分析
+- [🔧 方案: 结构改进与训练流程优化](docs/plans/2026-06-25-Structure-improvement-plam.md) — P2-Lite 架构 + 五阶段训练
+- [📦 方案: 多源数据集训练建议](docs/plans/2026-06-25-Multi-source-datasets-training-recomendation.md) — 公开数据集整合策略
 
 ## 技术参考
 
