@@ -56,13 +56,16 @@ class HardwareProfile:
     # Class-level constant — VRAM per sample estimates (GB), conservative
     # Key: (model_family, imgsz)  →  GB VRAM per sample with mosaic + mixup + AMP
     _VRAM_PER_SAMPLE: ClassVar[Dict[Tuple[str, int], float]] = {
-        ("yolo11n", 640):  0.25,
-        ("yolo11s", 640):  0.35,
-        ("yolo11s", 1024): 0.80,
-        ("yolo11m", 640):  0.55,
-        ("yolo11m", 1024): 1.10,
-        ("yolo11m-P2", 640):  0.70,
-        ("yolo11m-P2", 1024): 1.40,
+        ("yolo11n", 640):   0.25,
+        ("yolo11s", 640):   0.35,
+        ("yolo11s", 1024):  0.80,
+        ("yolo11s", 1280):  1.25,   # ~0.80 × (1280/1024)²
+        ("yolo11m", 640):   0.55,
+        ("yolo11m", 1024):  1.10,
+        ("yolo11m", 1280):  1.72,   # ~1.10 × (1280/1024)²
+        ("yolo11m-P2", 640):   0.70,
+        ("yolo11m-P2", 1024):  1.40,
+        ("yolo11m-P2", 1280):  2.19,  # ~1.40 × (1280/1024)²
     }
 
     @classmethod
@@ -175,15 +178,20 @@ class HardwareProfile:
             return min_batch  # CPU-only fallback
 
         key = (model_family, imgsz)
-        # Fall back to nearest imgsz key
+        # Fall back to nearest imgsz key (closest match, not just 640)
         if key not in self._VRAM_PER_SAMPLE:
-            key = (model_family, 640) if (model_family, 640) in self._VRAM_PER_SAMPLE else ("yolo11s", 1024)
+            same_family = [(f, s) for f, s in self._VRAM_PER_SAMPLE if f == model_family]
+            if same_family:
+                closest = min(same_family, key=lambda k: abs(k[1] - imgsz))
+                key = closest
+            else:
+                key = ("yolo11s", 1024)  # ultimate fallback
 
         gb_per_sample = self._VRAM_PER_SAMPLE[key]
         usable_vram = self.vram_gb * safety_margin
 
         # Reserve 6 GB for model weights + optimizer states + cuDNN workspace
-        # (increased from 4 GB — imgsz=1024 with EMA/SimAM needs more headroom)
+        # (AdamW uses ~2× SGD memory for moment buffers; multi_scale peaks use more)
         model_overhead = 6.0
         batch = int((usable_vram - model_overhead) / gb_per_sample)
 
@@ -402,9 +410,31 @@ def apply_hardware_profile(
     # ── Batch size (VRAM-aware) ──
     imgsz = config.get("imgsz", 640)
     default_batch = config.get("batch", 16)
+
+    # Account for multi_scale: reduce safety margin when imgsz varies per batch.
+    # Peak imgsz = base * (1 + multi_scale); peak VRAM ≈ base_VRAM * (1 + ms)².
+    # We size for the midpoint between base and peak to balance throughput vs OOM risk.
+    multi_scale = float(config.get("multi_scale", 0.0))
+    if multi_scale > 0:
+        midpoint_factor = (1.0 + multi_scale / 2) ** 2  # VRAM scaling ~ pixel count
+        safe_margin = max(0.35, 0.75 / midpoint_factor)  # floor 35% to avoid batch=0
+    else:
+        safe_margin = 0.75
+
     recommended_batch = profile.recommend_batch_size(
         model_path=model_path, imgsz=imgsz
     )
+    # Apply multi_scale safety: reduce batch proportionally
+    if multi_scale > 0:
+        ms_batch = profile.estimate_batch_size(
+            model_family=profile._infer_family(model_path),
+            imgsz=imgsz,
+            safety_margin=safe_margin,
+        )
+        recommended_batch = min(recommended_batch, ms_batch)
+        logger.info("  → multi_scale=%.2f, safety_margin=%.0f%%, ms_aware_batch=%s",
+                     multi_scale, safe_margin * 100, ms_batch)
+
     # Never go above what the preset specified as ceiling
     final_batch = min(recommended_batch, default_batch * 2)
     # But don't go below 4
@@ -415,11 +445,13 @@ def apply_hardware_profile(
 
     # ── OOM safeguard: warn if estimated VRAM usage is high ──
     if profile.vram_gb > 0:
+        # Use peak imgsz for VRAM warning
+        peak_imgsz = int(imgsz * (1.0 + multi_scale)) if multi_scale else imgsz
         gb_per_sample = HardwareProfile._VRAM_PER_SAMPLE.get(
-            (profile._infer_family(model_path), imgsz),
+            (profile._infer_family(model_path), peak_imgsz),
             HardwareProfile._VRAM_PER_SAMPLE.get(("yolo11s", 1024), 1.0),
         )
-        est_vram = 2.0 + final_batch * gb_per_sample  # 2GB model overhead
+        est_vram = 6.0 + final_batch * gb_per_sample  # 6GB model overhead (EMA + AdamW + cuDNN)
         usage_pct = est_vram / profile.vram_gb * 100
         if usage_pct > 85:
             warnings.warn(
@@ -428,7 +460,8 @@ def apply_hardware_profile(
                 f"Consider reducing --batch or --imgsz if you see CUDA OOM errors.",
                 stacklevel=2,
             )
-        logger.info("  → Estimated VRAM: %.1f / %.1f GB (%.0f%%)", est_vram, profile.vram_gb, usage_pct)
+        logger.info("  → Estimated VRAM (peak imgsz=%s): %.1f / %.1f GB (%.0f%%)",
+                     peak_imgsz, est_vram, profile.vram_gb, usage_pct)
 
     return config
 
