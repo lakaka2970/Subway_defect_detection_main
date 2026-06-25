@@ -12,8 +12,8 @@ Performance: Pre-indexes images by class (one pass), then uses multiprocessing
 for parallel inpainting across all CPU cores.
 
 Usage:
-    python tool/generate_synthetic_defects.py
-    python tool/generate_synthetic_defects.py --target_class 3 --limit 20 --workers 8
+    python scripts/generate_synthetic_defects.py
+    python scripts/generate_synthetic_defects.py --target_class 3 --limit 20 --workers 8
 """
 
 import argparse

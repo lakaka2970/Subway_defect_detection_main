@@ -2,7 +2,7 @@
 """Step 1: Strip trailing empty line from classes.txt so exactly 7 classes remain.
 
 Usage:
-    python tool/fix_classes_txt.py
+    python scripts/fix_classes_txt.py
 """
 
 from pathlib import Path

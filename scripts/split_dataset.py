@@ -9,8 +9,8 @@ in either train or val.
 Performance: Uses ThreadPoolExecutor for parallel file copy operations.
 
 Usage:
-    python tool/split_dataset.py
-    python tool/split_dataset.py --ratio 0.8 --seed 42 --workers 8
+    python scripts/split_dataset.py
+    python scripts/split_dataset.py --ratio 0.8 --seed 42 --workers 8
 """
 
 import argparse

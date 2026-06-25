@@ -5,7 +5,7 @@ channels: 3 — OpenCV IMREAD_COLOR auto-converts grayscale to 3-channel BGR
 so COCO-pretrained weights (yolo11s.pt) remain compatible.
 
 Usage:
-    python tool/create_defect_data_yaml.py
+    python scripts/create_defect_data_yaml.py
 """
 
 import yaml

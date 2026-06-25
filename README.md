@@ -53,17 +53,18 @@ Subway_defect_detection_main/
 │   ├── test_attention_modules.py     # EMA/SimAM/ECA 单元 + 模型集成
 │   ├── test_augmentations.py         # 增强管道 + 训练配置
 │   └── test_pipeline.py              # 切片器 + WBF 融合 + 部署
-├── scripts/
-│   └── setup_autodl.sh               # AutoDL 云平台环境配置
-├── tool/                             # 数据集工具脚本
-│   ├── prepare_dataset.py            # 一键自制数据集准备
-│   ├── split_dataset.py              # 按源图分组 train/val 划分
-│   ├── generate_native_crops.py      # 原生分辨率 crop 生成 (P0 结构修复)
-│   ├── validate_dataset.py           # 数据集完整性校验
+├── scripts/                                  # 数据集工具脚本 + AutoDL 配置
+│   ├── setup_autodl.sh                    # AutoDL 云平台环境配置
+│   ├── prepare_dataset.py                # 一键自制数据集准备
+│   ├── split_dataset.py                  # 按源图分组 train/val 划分
+│   ├── generate_native_crops.py          # 原生分辨率 crop 生成 (P0 结构修复)
+│   ├── validate_dataset.py               # 数据集完整性校验
 │   ├── multi_source_dataset_builder.py   # 多源公开数据集构建器 (AutoDL)
 │   ├── multi_source_pretrain_yaml.py     # 多阶段训练配置生成器
 │   ├── generate_scene_augmentations.py   # 场景增强（隧道/日照/模糊）
-│   └── generate_synthetic_defects.py     # Inpainting 合成缺陷
+│   ├── generate_synthetic_defects.py     # Inpainting 合成缺陷
+│   ├── fix_classes_txt.py                # classes.txt 自动修复
+│   └── create_defect_data_yaml.py        # defect_data.yaml 创建
 ├── pyproject.toml                    # 项目配置（包名 subway_defect）
 ├── README.md                         # 本文件
 ├── SPECIFICATION.md                  # 完整规格说明书
@@ -264,7 +265,7 @@ GPU 0: YOLO11m-EMA-SimAM        GPU 1: YOLO11m-P2-SimAM
 
 ```bash
 # Step 0: 生成原生分辨率 crop (P0 结构修复 — 解决缺陷从 40px 缩到 8px 问题)
-python tool/generate_native_crops.py --crop-size 1024
+python scripts/generate_native_crops.py --crop-size 1024
 
 # Step 1-3: 现代五阶段训练 (每阶段可独立使用不同数据集)
 train-defect --data data/subway_crops/subway_crops.yaml \
@@ -302,17 +303,17 @@ train-defect --data datasets/defects/defect_data.yaml --coco_pretrain --device 0
 
 #### Phase 1A: 自制数据集准备
 
-项目提供了 `tool/` 目录下的一键准备脚本：
+项目提供了 `scripts/` 目录下的一键准备脚本：
 
 ```bash
 # 一键执行：classes.txt 修复 → YAML 生成 → train/val 划分 → 场景增强 → 合成缺陷
-python tool/prepare_dataset.py
+python scripts/prepare_dataset.py
 
 # 生成原生分辨率 crop (推荐替代整图 resize — 见分析报告)
-python tool/generate_native_crops.py --crop-size 1024
+python scripts/generate_native_crops.py --crop-size 1024
 
 # 校验数据集完整性
-python tool/validate_dataset.py
+python scripts/validate_dataset.py
 ```
 
 **各步骤说明**：
@@ -336,7 +337,7 @@ python tool/validate_dataset.py
 
 > **注意**：当前数据集仅覆盖 7 类缺陷，模型 YAML 中 `nc: 18` 为完整缺陷分类体系的占位值。训练时 dataset YAML 会自动将模型 `nc` 覆盖为实际类别数。新增标注数据后，只需更新 dataset YAML 的 `names` 列表即可扩展类别。
 
-**✅ 验证通过标准**：运行 `python tool/validate_dataset.py` 输出 `[PASS] VALIDATION PASSED`。
+**✅ 验证通过标准**：运行 `python scripts/validate_dataset.py` 输出 `[PASS] VALIDATION PASSED`。
 
 ---
 
@@ -367,25 +368,25 @@ python tool/validate_dataset.py
 # ===================== AutoDL 云端操作步骤 =====================
 
 # Step 1 — 扫描 /root/autodl-pub 中已有的公开数据集
-python tool/multi_source_dataset_builder.py --scan-only
+python scripts/multi_source_dataset_builder.py --scan-only
 
 # Step 2 — 完整构建（扫描 + 下载缺失 + 统一转 YOLO + 合并）
 #   DeepPCB:   git clone https://github.com/tangsanli5201/DeepPCB.git
 #   GC10-DET:  kaggle datasets download -d alex000kim/gc10det
 #   NEU-DET:   kaggle datasets download -d kaustubhdikshit/neu-surface-defect-database
-python tool/multi_source_dataset_builder.py
+python scripts/multi_source_dataset_builder.py
 
 # 如果 Kaggle CLI 未配置，仅使用 autodl-pub 已有数据
-python tool/multi_source_dataset_builder.py --no-download
+python scripts/multi_source_dataset_builder.py --no-download
 
 # 只构建特定数据集
-python tool/multi_source_dataset_builder.py --datasets deeppcb neu_det gc10_det
+python scripts/multi_source_dataset_builder.py --datasets deeppcb neu_det gc10_det
 
 # 启用可选数据集（TT100K、绝缘子、MVTec AD、VisA）
-python tool/multi_source_dataset_builder.py --enable tt100k insulator_defect
+python scripts/multi_source_dataset_builder.py --enable tt100k insulator_defect
 
 # Dry-run：预览操作计划不执行
-python tool/multi_source_dataset_builder.py --dry-run
+python scripts/multi_source_dataset_builder.py --dry-run
 ```
 
 **各数据集获取通道（已验证 2025-06）**：
@@ -432,16 +433,16 @@ ls data/multi_datasets/mixed_pretrain/images/train/ | wc -l   # 应 > 5000
 
 ```bash
 # 生成所有可用的训练阶段配置
-python tool/multi_source_pretrain_yaml.py
+python scripts/multi_source_pretrain_yaml.py
 
 # 仅生成指定阶段
-python tool/multi_source_pretrain_yaml.py --phases 2 3 4
+python scripts/multi_source_pretrain_yaml.py --phases 2 3 4
 
 # 自定义数据集根目录
-python tool/multi_source_pretrain_yaml.py --root data/multi_datasets
+python scripts/multi_source_pretrain_yaml.py --root data/multi_datasets
 
 # Dry-run：预览配置内容不写入文件
-python tool/multi_source_pretrain_yaml.py --dry-run
+python scripts/multi_source_pretrain_yaml.py --dry-run
 ```
 
 **产出文件（输出至 `config/train/pretrain/`）**：
@@ -672,7 +673,7 @@ for i, ap in enumerate(metrics.ap_class_index):
 "
 ```
 
-> **❌ 不通过**：mAP 停滞在 < 0.5 → 增强可能过强（降低 mosaic 至 0.5）；某类 AP=0 → 该类样本不足（运行 `python tool/generate_synthetic_defects.py --target_class <id>`）；val loss 上升而 train loss 下降 → 过拟合（增加 `weight_decay` 或减少 epochs）。
+> **❌ 不通过**：mAP 停滞在 < 0.5 → 增强可能过强（降低 mosaic 至 0.5）；某类 AP=0 → 该类样本不足（运行 `python scripts/generate_synthetic_defects.py --target_class <id>`）；val loss 上升而 train loss 下降 → 过拟合（增加 `weight_decay` 或减少 epochs）。
 
 ---
 
@@ -741,11 +742,11 @@ train-defect \
 
 | # | 阶段 | 操作 | 预期结果 | 实际结果 | ✅ |
 |---|------|------|---------|---------|---|
-| 1A | 自制数据准备 | `python tool/prepare_dataset.py` | ~1880 train + ~100 val | | |
-| 1B | 数据校验 | `python tool/validate_dataset.py` | `[PASS]` | | |
-| 1C | 多源数据扫描 | `python tool/multi_source_dataset_builder.py --scan-only` | 列出 autodl-pub 中可用数据集 | | |
-| 1D | 多源数据构建 | `python tool/multi_source_dataset_builder.py` | `data/multi_datasets/mixed_pretrain/data.yaml` 存在 | | |
-| 1E | 训练配置生成 | `python tool/multi_source_pretrain_yaml.py` | `config/train/pretrain/phase3_public_defect.yaml` 存在 | | |
+| 1A | 自制数据准备 | `python scripts/prepare_dataset.py` | ~1880 train + ~100 val | | |
+| 1B | 数据校验 | `python scripts/validate_dataset.py` | `[PASS]` | | |
+| 1C | 多源数据扫描 | `python scripts/multi_source_dataset_builder.py --scan-only` | 列出 autodl-pub 中可用数据集 | | |
+| 1D | 多源数据构建 | `python scripts/multi_source_dataset_builder.py` | `data/multi_datasets/mixed_pretrain/data.yaml` 存在 | | |
+| 1E | 训练配置生成 | `python scripts/multi_source_pretrain_yaml.py` | `config/train/pretrain/phase3_public_defect.yaml` 存在 | | |
 | 2 | COCO 权重 | `python -c "from subway_yolo import YOLO; YOLO('yolo11s.pt')"` | 无报错 | | |
 | 2A | [可选] TT100K P2 预热 | `train-defect --data config/train/pretrain/phase2_tiny_pretrain.yaml ...` | best.pt 保存, loss 正常下降 | | |
 | 2B | 公开缺陷预训练 | `train-defect --data config/train/pretrain/phase3_public_defect.yaml ...` | mAP50 参考值, loss 稳定下降<br>输出: `weights/public_defect_pretrain.pt` | | |
@@ -765,7 +766,7 @@ train-defect \
 | C1 loss 不下降 | LR 不合适 | 修改 `config/train/warmup.yaml` 中 `lr0`: 0.001 → 0.0005 |
 | C1 完成后 mAP50 < 0.15 | 标注格式或匹配错误 | 检查 label 文件名与 image 文件名是否一一对应 |
 | C2 mAP50 停滞在 0.4-0.5 | 增强过强，模型学不到真实分布 | 降低 `mosaic` 至 0.3, 降低 `copy_paste` 至 0.1（修改 `config/train/full.yaml`） |
-| 某类别 AP50 = 0 | 该类标注样本过少 | `python tool/generate_synthetic_defects.py --target_class <id> --limit_per_class -1` |
+| 某类别 AP50 = 0 | 该类标注样本过少 | `python scripts/generate_synthetic_defects.py --target_class <id> --limit_per_class -1` |
 | Val loss 上升，train loss 下降 | 过拟合 | 增大 `weight_decay` (0.0005→0.001), 增加增强强度 |
 | GPU 显存不足 (OOM) | batch size 过大 | 减小 `batch` 至 8 或 4（修改 `config/train/<stage>.yaml`） |
 | 训练意外中断 | 断电/超时 | 从最近 checkpoint 恢复：`--pretrained output/.../weights/last.pt --skip_warmup` |

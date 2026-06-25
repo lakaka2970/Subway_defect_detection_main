@@ -9,16 +9,16 @@ defined in the multi-source datasets training plan.
 Usage (run on AutoDL instance after dataset builder)::
 
     # Generate all training configs
-    python tool/multi_source_pretrain_yaml.py
+    python scripts/multi_source_pretrain_yaml.py
 
     # Generate configs for specific phases
-    python tool/multi_source_pretrain_yaml.py --phases 2 3 4
+    python scripts/multi_source_pretrain_yaml.py --phases 2 3 4
 
     # Specify custom dataset root
-    python tool/multi_source_pretrain_yaml.py --root data/multi_datasets
+    python scripts/multi_source_pretrain_yaml.py --root data/multi_datasets
 
     # Dry-run: print what would be created
-    python tool/multi_source_pretrain_yaml.py --dry-run
+    python scripts/multi_source_pretrain_yaml.py --dry-run
 
 Output files (written to config/train/pretrain/)::
 
@@ -456,10 +456,10 @@ def main() -> None:
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  python tool/multi_source_pretrain_yaml.py
-  python tool/multi_source_pretrain_yaml.py --phases 2 3 4
-  python tool/multi_source_pretrain_yaml.py --root data/multi_datasets
-  python tool/multi_source_pretrain_yaml.py --dry-run
+  python scripts/multi_source_pretrain_yaml.py
+  python scripts/multi_source_pretrain_yaml.py --phases 2 3 4
+  python scripts/multi_source_pretrain_yaml.py --root data/multi_datasets
+  python scripts/multi_source_pretrain_yaml.py --dry-run
 """,
     )
     parser.add_argument(

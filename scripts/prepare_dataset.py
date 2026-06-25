@@ -11,9 +11,9 @@ Runs the following steps in order:
   6. validate_dataset          — integrity and statistics check
 
 Usage:
-    python tool/prepare_dataset.py              # run all steps
-    python tool/prepare_dataset.py --step 3     # run only step 3
-    python tool/prepare_dataset.py --skip 4 5   # skip augmentations
+    python scripts/prepare_dataset.py              # run all steps
+    python scripts/prepare_dataset.py --step 3     # run only step 3
+    python scripts/prepare_dataset.py --skip 4 5   # skip augmentations
 """
 
 import argparse

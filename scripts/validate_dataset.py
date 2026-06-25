@@ -11,8 +11,8 @@ Checks:
 Performance: Uses ThreadPoolExecutor for parallel label file parsing.
 
 Usage:
-    python tool/validate_dataset.py
-    python tool/validate_dataset.py --workers 8
+    python scripts/validate_dataset.py
+    python scripts/validate_dataset.py --workers 8
 """
 
 import argparse

@@ -17,8 +17,8 @@ image I/O + augmentation.  For 399 images × 3 augs on an 8-core machine
 this reduces wall time from ~3 min to ~30 s.
 
 Usage:
-    python tool/generate_scene_augmentations.py
-    python tool/generate_scene_augmentations.py --n_augs 5 --workers 8
+    python scripts/generate_scene_augmentations.py
+    python scripts/generate_scene_augmentations.py --n_augs 5 --workers 8
 """
 
 import argparse

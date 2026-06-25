@@ -10,22 +10,22 @@ ready for multi-source pretraining.
 Usage (run on AutoDL instance)::
 
     # Phase 1 — scan only, see what's available
-    python tool/multi_source_dataset_builder.py --scan-only
+    python scripts/multi_source_dataset_builder.py --scan-only
 
     # Phase 2 — full build (scan + download + convert + merge)
-    python tool/multi_source_dataset_builder.py
+    python scripts/multi_source_dataset_builder.py
 
     # Phase 2 with custom output root
-    python tool/multi_source_dataset_builder.py --output data/multi_datasets
+    python scripts/multi_source_dataset_builder.py --output data/multi_datasets
 
     # Build only specific datasets
-    python tool/multi_source_dataset_builder.py --datasets deeppcb neu_det gc10_det
+    python scripts/multi_source_dataset_builder.py --datasets deeppcb neu_det gc10_det
 
     # Skip download (use only what's in autodl-pub)
-    python tool/multi_source_dataset_builder.py --no-download
+    python scripts/multi_source_dataset_builder.py --no-download
 
     # Dry-run: print plan without executing
-    python tool/multi_source_dataset_builder.py --dry-run
+    python scripts/multi_source_dataset_builder.py --dry-run
 
 Directory structure created::
 
@@ -1810,7 +1810,7 @@ class DatasetBuilder:
             print(f"  Mixed pretrain: {train_imgs} train / {val_imgs} val images")
 
         print(f"\n  Next steps:")
-        print(f"    1. Verify: python tool/multi_source_dataset_builder.py --scan-only")
+        print(f"    1. Verify: python scripts/multi_source_dataset_builder.py --scan-only")
         print(f"    2. Train with mixed_pretrain/data.yaml")
 
     # ── Helpers ────────────────────────────────────────────────────
@@ -1939,13 +1939,13 @@ def main() -> None:
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  python tool/multi_source_dataset_builder.py --scan-only
-  python tool/multi_source_dataset_builder.py
-  python tool/multi_source_dataset_builder.py --datasets deeppcb neu_det gc10_det
-  python tool/multi_source_dataset_builder.py --output data/multi_datasets
-  python tool/multi_source_dataset_builder.py --dry-run
-  python tool/multi_source_dataset_builder.py --no-download
-  python tool/multi_source_dataset_builder.py --enable tt100k insulator_defect
+  python scripts/multi_source_dataset_builder.py --scan-only
+  python scripts/multi_source_dataset_builder.py
+  python scripts/multi_source_dataset_builder.py --datasets deeppcb neu_det gc10_det
+  python scripts/multi_source_dataset_builder.py --output data/multi_datasets
+  python scripts/multi_source_dataset_builder.py --dry-run
+  python scripts/multi_source_dataset_builder.py --no-download
+  python scripts/multi_source_dataset_builder.py --enable tt100k insulator_defect
 """,
     )
     parser.add_argument(

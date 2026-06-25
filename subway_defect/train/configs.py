@@ -540,6 +540,6 @@ def load_pretrain_config(stage_name: str) -> dict:
         raise FileNotFoundError(
             f"Pretrain config not found: {path}\n"
             f"Expected YAML files in config/train/pretrain/\n"
-            f"Run 'python tool/multi_source_pretrain_yaml.py' to generate them."
+            f"Run 'python scripts/multi_source_pretrain_yaml.py' to generate them."
         )
     return config

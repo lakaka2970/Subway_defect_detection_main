@@ -31,16 +31,16 @@ Output layout::
 Usage::
 
     # Generate 1024px crops (default)
-    python tool/generate_native_crops.py
+    python scripts/generate_native_crops.py
 
     # Generate 1280px crops with more negatives
-    python tool/generate_native_crops.py --crop-size 1280 --negatives-per-image 20
+    python scripts/generate_native_crops.py --crop-size 1280 --negatives-per-image 20
 
     # Dry-run: print statistics without generating
-    python tool/generate_native_crops.py --dry-run
+    python scripts/generate_native_crops.py --dry-run
 
     # Custom source / output directories
-    python tool/generate_native_crops.py \\
+    python scripts/generate_native_crops.py \\
         --src data/Defect_dataset/images/train \\
         --labels data/Defect_dataset/labels/train \\
         --output data/subway_crops
@@ -461,7 +461,7 @@ def generate_crops(
             "nc": NC,
             "names": CLASS_NAMES,
             "# crop_size": crop_size,
-            "# generated_by": "tool/generate_native_crops.py",
+            "# generated_by": "scripts/generate_native_crops.py",
         }
         if yaml is not None:
             data_yaml.write_text(
@@ -490,10 +490,10 @@ def main() -> None:
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  python tool/generate_native_crops.py
-  python tool/generate_native_crops.py --crop-size 1280 --negatives-per-image 20
-  python tool/generate_native_crops.py --dry-run
-  python tool/generate_native_crops.py --src data/custom/images --labels data/custom/labels
+  python scripts/generate_native_crops.py
+  python scripts/generate_native_crops.py --crop-size 1280 --negatives-per-image 20
+  python scripts/generate_native_crops.py --dry-run
+  python scripts/generate_native_crops.py --src data/custom/images --labels data/custom/labels
 """,
     )
     parser.add_argument(
