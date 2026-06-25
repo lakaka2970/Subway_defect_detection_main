@@ -244,6 +244,8 @@ python tool/validate_dataset.py
 | 类别数 | 7 类（VHBNM, VHBNL, SVHBNM, SVHBNL, SVHTNL, CBHPM, CBVPM） |
 | 图像尺寸 | 5120 × 5120（训练时 resize 至 1024） |
 
+> **注意**：当前数据集仅覆盖 7 类缺陷，模型 YAML 中 `nc: 18` 为完整缺陷分类体系的占位值。训练时 dataset YAML 会自动将模型 `nc` 覆盖为实际类别数。新增标注数据后，只需更新 dataset YAML 的 `names` 列表即可扩展类别。
+
 **✅ 验证通过标准**：运行 `python tool/validate_dataset.py` 输出 `[PASS] VALIDATION PASSED`。
 
 ---
@@ -259,11 +261,15 @@ YOLO11 在 COCO 2017 数据集（118K 图像，80 类通用目标）上预训练
 
 ```bash
 # 车载端模型 (9.5M 参数)
-wget https://github.com/ultralytics/assets/releases/download/v8.4.0/yolo11s.pt
+wget https://github.com/ultralytics/assets/releases/download/v8.4.0/yolo11s.pt \
+    -O yolo_weights/yolo11s.pt
 
 # 地面端模型 (20.1M 参数)
-wget https://github.com/ultralytics/assets/releases/download/v8.4.0/yolo11m.pt
+wget https://github.com/ultralytics/assets/releases/download/v8.4.0/yolo11m.pt \
+    -O yolo_weights/yolo11m.pt
 ```
+
+> 所有权重文件统一存放于 `yolo_weights/` 目录。框架会自动在该目录查找预训练权重。
 
 **✅ 验证通过标准**：
 ```bash
@@ -278,14 +284,18 @@ python -c "from subway_yolo import YOLO; m = YOLO('yolo11s.pt'); print('OK:', su
 **训练原理**：冻结 backbone 全部 11 层（`model.0 ~ model.10`），仅训练检测头（YOLO Head + EMA/SimAM 注意力）。COCO 学到的通用特征（边缘、纹理、形状）保持不变，检测头快速适应地铁接触网的特定目标尺寸和分布。
 
 ```bash
+# 仅运行 C1（跳过 C2、C3），验证预热效果
 train-defect \
     --data data/Defect_dataset/defect_data.yaml \
     --model subway_defect/models/yolo11s-EMA-SimAM.yaml \
     --coco_pretrain \
     --device 0 \
+    --skip_full \
     --skip_finetune \
     --name defect_detector
 ```
+
+> 输出目录：`output/defect_detector_<时间戳>_c1_warmup/`
 
 | 关键参数 | 值 | 说明 |
 |----------|-----|------|
@@ -298,10 +308,10 @@ train-defect \
 
 | 指标 | 目标值 | 如何查看 |
 |------|--------|---------|
-| best.pt 已保存 | 文件存在 | `ls runs/defect_detector_c1_warmup/weights/best.pt` |
+| best.pt 已保存 | 文件存在 | `ls output/defect_detector_<时间戳>_c1_warmup/weights/best.pt` |
 | mAP50 | **> 0.30** | 训练日志或 `results.csv` 中的 `metrics/mAP50(B)` |
 | Box Loss | **< 1.5** | `results.csv` 中的 `train/box_loss` |
-| 训练曲线 | 持续下降，无发散 | `runs/defect_detector_c1_warmup/results.png` |
+| 训练曲线 | 持续下降，无发散 | `output/defect_detector_<时间戳>_c1_warmup/results.png` |
 
 > **❌ 不通过**：Loss 持续不降 → 降低 LR 至 0.0005；mAP 始终 < 0.10 → 检查标注与图像是否匹配。
 
@@ -312,15 +322,17 @@ train-defect \
 **训练原理**：解冻 backbone，启用全套增强（Mosaic 0.8 → 0, MixUp 0.15, CopyPaste 0.6），Cosine LR 从 0.001 衰减至 0.00001。这是模型能力提升最大的阶段。
 
 ```bash
+# 从 C1 最佳权重开始，仅运行 C2（跳过 C1、C3）
 train-defect \
     --data data/Defect_dataset/defect_data.yaml \
-    --pretrained runs/defect_detector_c1_warmup/weights/best.pt \
+    --pretrained output/defect_detector_<时间戳>_c1_warmup/weights/best.pt \
+    --skip_warmup \
     --device 0 \
     --skip_finetune \
     --name defect_detector
 ```
 
-> 如果跳过了 C1（已有预热权重），直接从此阶段开始。否则使用完整命令自动衔接：`train-defect --data ... --coco_pretrain --device 0`（自动执行 C1→C2→C3）。
+> 将 `<时间戳>` 替换为 C1 运行时生成的实际时间戳。如果跳过 C1 验证直接用完整管道，见下方「一键训练」。
 
 | 关键参数 | 值 | 说明 |
 |----------|-----|------|
@@ -335,8 +347,8 @@ train-defect \
 
 | 指标 | 目标值 | 如何查看 |
 |------|--------|---------|
-| mAP50 | **> 0.70** | `grep "mAP50" runs/.../results.csv` 末行 |
-| mAP50-95 | **> 0.40** | `grep "mAP50-95" runs/.../results.csv` 末行 |
+| mAP50 | **> 0.70** | `grep "mAP50" output/..._c2_full/results.csv` 末行 |
+| mAP50-95 | **> 0.40** | `grep "mAP50-95" output/..._c2_full/results.csv` 末行 |
 | Precision | **> 0.85** | `results.csv` 中的 `metrics/precision(B)` |
 | Recall | **> 0.85** | `results.csv` 中的 `metrics/recall(B)` |
 | 类别平衡 | **最低类 AP50 > 0.50** | 检查每类 AP，无类别崩塌 |
@@ -345,7 +357,7 @@ train-defect \
 ```bash
 python -c "
 from subway_yolo import YOLO
-model = YOLO('runs/defect_detector_c2_full/weights/best.pt')
+model = YOLO('output/defect_detector_<时间戳>_c2_full/weights/best.pt')
 metrics = model.val(data='data/Defect_dataset/defect_data.yaml', split='val')
 for i, ap in enumerate(metrics.ap_class_index):
     print(f'  Class {i}: AP50={metrics.ap50[i]:.3f}')
@@ -361,10 +373,12 @@ for i, ap in enumerate(metrics.ap_class_index):
 **训练原理**：关闭 Mosaic 和 MixUp（它们改变数据分布），仅保留 CopyPaste 0.4 和轻量几何增强。低 LR (0.0001) 恒速微调，让模型收敛到真实数据分布上。
 
 ```bash
+# 从 C2 最佳权重开始，仅运行 C3（跳过 C1、C2）
 train-defect \
     --data data/Defect_dataset/defect_data.yaml \
-    --pretrained runs/defect_detector_c2_full/weights/best.pt \
+    --pretrained output/defect_detector_<时间戳>_c2_full/weights/best.pt \
     --skip_warmup \
+    --skip_full \
     --device 0 \
     --name defect_detector
 ```
@@ -394,6 +408,7 @@ train-defect \
 
 ```bash
 # 车载端：从 COCO 预训练开始，自动完成 C1→C2→C3
+# 输出目录: output/defect_detector_<时间戳>_c{1,2,3}_{warmup,full,finetune}/
 train-defect \
     --data data/Defect_dataset/defect_data.yaml \
     --model subway_defect/models/yolo11s-EMA-SimAM.yaml \
@@ -419,9 +434,9 @@ train-defect \
 | 1 | 数据准备 | `python tool/prepare_dataset.py` | ~1880 train + ~100 val | | |
 | 2 | 数据校验 | `python tool/validate_dataset.py` | `[PASS]` | | |
 | 3 | COCO 权重 | `python -c "from subway_yolo import YOLO; YOLO('yolo11s.pt')"` | 无报错 | | |
-| 4 | C1 预热 | `train-defect ... --skip_finetune` | mAP50 > 0.30, Box Loss < 1.5 | | |
-| 5 | C2 主训练 | `train-defect ... --pretrained <c1_best.pt> --skip_finetune` | mAP50 > 0.70, P/R > 0.85 | | |
-| 6 | C3 微调 | `train-defect ... --pretrained <c2_best.pt> --skip_warmup` | mAP50 ≥ 0.75, P/R ≥ 0.90 | | |
+| 4 | C1 预热 | `train-defect ... --coco_pretrain --skip_full --skip_finetune` | mAP50 > 0.30, Box Loss < 1.5<br>输出: `output/..._c1_warmup/` | | |
+| 5 | C2 主训练 | `train-defect ... --pretrained <c1_best> --skip_warmup --skip_finetune` | mAP50 > 0.70, P/R > 0.85<br>输出: `output/..._c2_full/` | | |
+| 6 | C3 微调 | `train-defect ... --pretrained <c2_best> --skip_warmup --skip_full` | mAP50 ≥ 0.75, P/R ≥ 0.90<br>输出: `output/..._c3_finetune/` | | |
 | 7 | 推理验证 | `subway-server --model <final.pt> --mode vehicle` | 推理耗时 ≤ 10s, 结果正确 | | |
 
 ---
@@ -436,7 +451,7 @@ train-defect \
 | 某类别 AP50 = 0 | 该类标注样本过少 | `python tool/generate_synthetic_defects.py --target_class <id> --limit_per_class -1` |
 | Val loss 上升，train loss 下降 | 过拟合 | 增大 `weight_decay` (0.0005→0.001), 增加增强强度 |
 | GPU 显存不足 (OOM) | batch size 过大 | 减小 `batch` 至 8 或 4（修改 `configs.py`） |
-| 训练意外中断 | 断电/超时 | 从最近 checkpoint 恢复：`--pretrained runs/.../weights/last.pt --skip_warmup` |
+| 训练意外中断 | 断电/超时 | 从最近 checkpoint 恢复：`--pretrained output/.../weights/last.pt --skip_warmup` |
 | 增强图片效果异常 | 场景增强参数不当 | 预览增强效果：`python -c "from subway_defect.augmentations.scene import *; ..."` 检查输出 |
 | 合成缺陷区域不自然 | Inpainting 修复痕迹明显 | 降低目标类 bbox 面积（仅对大目标 inpainting 效果较好） |
 
@@ -448,14 +463,15 @@ train-defect \
 
 ```bash
 # 车载端（单模型）
+# 将 <时间戳> 替换为实际训练输出的时间戳
 subway-server --port 8001 \
-              --model runs/defect_detector_c2_full/weights/best.pt \
+              --model output/defect_detector_<时间戳>_c3_finetune/weights/best.pt \
               --mode vehicle
 
 # 地面端（双 GPU Ensemble + WBF 融合）
 subway-server --port 8001 \
-              --model runs/defect_detector_c2_full/weights/best.pt \
-              --model_b runs/defect_detector_p2/weights/best.pt \
+              --model output/defect_detector_<时间戳>_c3_finetune/weights/best.pt \
+              --model_b output/defect_detector_p2_<时间戳>_c3_finetune/weights/best.pt \
               --mode ground
 ```
 
@@ -484,7 +500,7 @@ subway-server --port 8001 \
 
 ```bash
 # FP16 导出（推荐，车载端必备）
-export-tensorrt --model runs/defect_detector_c2_full/weights/best.pt --fp16
+export-tensorrt --model output/defect_detector_<时间戳>_c3_finetune/weights/best.pt --fp16
 
 # 自定义输出路径
 export-tensorrt --model best.pt --fp16 --output /path/to/model.engine
