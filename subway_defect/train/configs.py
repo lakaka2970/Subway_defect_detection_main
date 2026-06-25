@@ -74,6 +74,11 @@ class HardwareProfile:
                 prop = torch.cuda.get_device_properties(0)
                 profile.gpu_name = prop.name
                 profile.vram_gb = prop.total_mem / (1024 ** 3)
+                # Fallback: some drivers / container runtimes report total_mem=0
+                # even when CUDA is available. Use mem_get_info as backup.
+                if profile.vram_gb <= 0:
+                    free, total = torch.cuda.mem_get_info(0)
+                    profile.vram_gb = total / (1024 ** 3)
         except Exception:
             pass
 
@@ -137,8 +142,8 @@ class HardwareProfile:
         gb_per_sample = self._VRAM_PER_SAMPLE[key]
         usable_vram = self.vram_gb * safety_margin
 
-        # Reserve 2 GB for model weights + persistent buffers
-        model_overhead = 2.0
+        # Reserve 4 GB for model weights + optimizer states + cuDNN workspace
+        model_overhead = 4.0
         batch = int((usable_vram - model_overhead) / gb_per_sample)
 
         return max(min_batch, min(batch, max_batch))
@@ -264,15 +269,15 @@ DEFECT_FULL_TRAIN_CONFIG: dict = {
     "epochs": 200,
     "imgsz": 1024,
     "batch": 16,
-    "optimizer": "AdamW",
-    "lr0": 0.001,
+    "optimizer": "SGD",        # Same optimizer family as C1 — avoids AdamW reset
+    "lr0": 0.001,              # Match C1 LR; cosine decay to 1e-5
     "lrf": 0.01,
     "momentum": 0.937,
-    "weight_decay": 0.0001,
+    "weight_decay": 0.0005,    # Match C1 regularization
     "cos_lr": True,
-    "mosaic": 0.8,
-    "mixup": 0.15,
-    "copy_paste": 0.6,
+    "mosaic": 0.5,             # Reduced from 0.8 — less distortion for small dataset
+    "mixup": 0.0,              # Disabled — let model learn real distribution first
+    "copy_paste": 0.3,         # Reduced from 0.6 — milder class balancing
     "copy_paste_mode": "flip",
     "hsv_h": 0.015,
     "hsv_s": 0.7,
@@ -296,11 +301,11 @@ DEFECT_FINETUNE_CONFIG: dict = {
     "epochs": 50,
     "imgsz": 1024,
     "batch": 8,
-    "optimizer": "AdamW",
-    "lr0": 0.0001,
+    "optimizer": "SGD",        # Same family as C1/C2 — avoids optimizer reset
+    "lr0": 0.0001,             # Low constant LR for fine-tuning
     "lrf": 0.1,
     "momentum": 0.937,
-    "weight_decay": 0.0001,
+    "weight_decay": 0.0005,    # Match C1/C2 regularization
     "cos_lr": False,
     "mosaic": 0.0,
     "mixup": 0.0,

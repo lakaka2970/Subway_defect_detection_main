@@ -182,9 +182,7 @@ def main():
         print("Stage C3: Fine-Tune (50 epochs, mild augmentation)")
         print("=" * 60)
         c3 = {**DEFECT_FINETUNE_CONFIG, **base}
-        # Inherit workers/cache from C2, but use finetune"s own smaller batch
-        c3["workers"] = c2.get("workers", profile.recommended_workers)
-        c3["cache"] = c2.get("cache", profile.recommended_cache)
+        c3 = apply_hardware_profile(c3, profile, args.model)
         if args.workers is not None:
             c3["workers"] = args.workers
         if args.batch is not None:
