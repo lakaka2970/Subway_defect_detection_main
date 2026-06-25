@@ -182,7 +182,6 @@ _COMMON_BASE: dict = {
 # DataLoader — filled dynamically by HardwareProfile
 _DATALOADER: dict = {
     "workers": 8,              # overridden at runtime
-    "persistent_workers": True,  # Keep workers alive between epochs
     "cache": "disk",           # overridden at runtime — "disk" persists across runs
 }
 
