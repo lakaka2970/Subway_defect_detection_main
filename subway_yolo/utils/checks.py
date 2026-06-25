@@ -900,6 +900,11 @@ def check_amp(model):
             f"{prefix}checks skipped. "
             f"Unable to load YOLO26n for AMP checks due to possible Ultralytics package modifications. {warning_msg}"
         )
+    except RuntimeError:
+        LOGGER.warning(
+            f"{prefix}checks skipped. "
+            f"Failed to load YOLO26n for AMP checks (checkpoint may be corrupted). {warning_msg}"
+        )
     except AssertionError:
         LOGGER.error(
             f"{prefix}checks failed. Anomalies were detected with AMP on your system that may lead to "

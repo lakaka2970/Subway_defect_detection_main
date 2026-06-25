@@ -10,6 +10,7 @@ Usage:
 """
 
 import argparse
+from datetime import datetime
 from pathlib import Path
 
 from subway_yolo import YOLO
@@ -38,7 +39,16 @@ def main():
                         help="Skip C3 fine-tune stage")
     args = parser.parse_args()
 
-    base = {"data": args.data, "device": args.device}
+    # Generate timestamp for this training run
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    # Use absolute path so output goes to <project_root>/output/ instead of runs/
+    output_root = Path(__file__).resolve().parents[2] / "output"
+
+    base = {
+        "data": args.data,
+        "device": args.device,
+        "project": str(output_root),
+    }
 
     # Resolve pretrained weights
     pretrained = args.pretrained
@@ -61,7 +71,7 @@ def main():
         c1 = {**DEFECT_WARMUP_CONFIG, **base}
         model_file = pretrained or args.model
         model = YOLO(model_file)
-        model.train(name=f"{args.name}_c1_warmup", **c1)
+        model.train(name=f"{args.name}_{timestamp}_c1_warmup", **c1)
         ckpt = Path(model.trainer.save_dir) / "weights" / "best.pt"
     else:
         print("Skipping C1 warmup")
@@ -73,7 +83,7 @@ def main():
     print("=" * 60)
     c2 = {**DEFECT_FULL_TRAIN_CONFIG, **base}
     model2 = YOLO(str(ckpt))
-    model2.train(name=f"{args.name}_c2_full", **c2)
+    model2.train(name=f"{args.name}_{timestamp}_c2_full", **c2)
     ckpt2 = Path(model2.trainer.save_dir) / "weights" / "best.pt"
 
     # -- C3: Fine-Tune --
@@ -83,7 +93,7 @@ def main():
         print("=" * 60)
         c3 = {**DEFECT_FINETUNE_CONFIG, **base}
         model3 = YOLO(str(ckpt2))
-        model3.train(name=f"{args.name}_c3_finetune", **c3)
+        model3.train(name=f"{args.name}_{timestamp}_c3_finetune", **c3)
         final = Path(model3.trainer.save_dir) / "weights" / "best.pt"
     else:
         final = ckpt2
