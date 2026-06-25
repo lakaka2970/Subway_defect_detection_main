@@ -16,7 +16,7 @@ from subway_yolo.utils.downloads import download
 
 settings = SETTINGS
 
-MODELS = ("YOLO",)
+MODELS = ("YOLO", "RTDETR")
 
 __all__ = (
     "__version__",
