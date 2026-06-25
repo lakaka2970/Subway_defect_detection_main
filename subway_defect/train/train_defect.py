@@ -99,7 +99,10 @@ def main():
         "project": str(output_root),
     }
 
-    # Resolve pretrained weights
+    # Resolve pretrained weights — search in order:
+    #   1. Explicit path (--pretrained / COCO_PRETRAINED mapping)
+    #   2. yolo_weights/  directory (project pretrained weights)
+    #   3. Auto-download via attempt_download_asset inside YOLO()
     pretrained = args.pretrained
     if args.coco_pretrain and not pretrained:
         # Auto-detect from model name
@@ -112,11 +115,19 @@ def main():
             pretrained = "yolo11s.pt"
             print(f"Default COCO pretrain: {pretrained}")
 
-    # Verify pretrained file exists (avoid silent hang on download)
-    if pretrained and not Path(pretrained).exists():
-        print(f"ERROR: Pretrained weights not found: {pretrained}")
-        print(f"       Place the file in the project root or use --pretrained <path>")
-        return
+    # Resolve pretrained path: check explicit path, then yolo_weights/
+    if pretrained:
+        pt_path = Path(pretrained)
+        if not pt_path.exists():
+            # Try yolo_weights/ directory
+            yolo_w = Path("yolo_weights") / pt_path.name
+            if yolo_w.exists():
+                pretrained = str(yolo_w)
+                print(f"Found pretrained weights: {pretrained}")
+            else:
+                print(f"ERROR: Pretrained weights not found: {pt_path.name}")
+                print(f"       Place the file in yolo_weights/ or use --pretrained <path>")
+                return
 
     # -- C1: Warmup --
     if not args.skip_warmup:
