@@ -76,7 +76,11 @@ def _is_original(stem: str) -> bool:
 def _process_one_image(
     args: Tuple[Path, Path, int, int],
 ) -> int:
-    """Process a single image: read → apply N augs → write. Returns count generated."""
+    """Process a single image: read → apply N augs → write. Returns count generated.
+
+    Images with **empty or invalid** label files (no defect annotations) are skipped
+    — augmentation would produce useless empty-label copies that fail dataset validation.
+    """
     img_path, labels_dir, n_augs, seed = args
 
     # Each worker needs its own random state
@@ -88,6 +92,27 @@ def _process_one_image(
 
     label_path = labels_dir / f"{img_path.stem}.txt"
     if not label_path.exists():
+        return 0
+
+    # Skip images without annotations — an empty label file means the image
+    # contains no defects; augmenting it would only produce more empty-label
+    # copies that trip dataset validation and waste training I/O.
+    label_text = label_path.read_text(encoding="utf-8").strip()
+    if not label_text:
+        return 0
+
+    # Verify at least one line is a valid YOLO annotation (5 space-separated numbers)
+    has_valid = False
+    for line in label_text.splitlines():
+        parts = line.strip().split()
+        if len(parts) == 5:
+            try:
+                [float(p) for p in parts]
+                has_valid = True
+                break
+            except ValueError:
+                continue
+    if not has_valid:
         return 0
 
     generated = 0
