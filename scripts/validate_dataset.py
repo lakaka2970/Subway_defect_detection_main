@@ -95,13 +95,13 @@ def _parse_one_label(args: Tuple[Path, set]) -> Dict:
 
 
 def main() -> None:
-    cpu_count = os.cpu_count() or 4
+    _MAX_WORKERS = min(os.cpu_count() or 4, 8)
 
     parser = argparse.ArgumentParser(description="Validate prepared dataset (parallel)")
     parser.add_argument("--dataset_root", default="data/Defect_dataset")
     parser.add_argument(
-        "--workers", type=int, default=cpu_count,
-        help=f"Number of I/O threads (default: {cpu_count})",
+        "--workers", type=int, default=_MAX_WORKERS,
+        help=f"Number of I/O threads (default: {_MAX_WORKERS}, max: {_MAX_WORKERS})",
     )
     args = parser.parse_args()
 

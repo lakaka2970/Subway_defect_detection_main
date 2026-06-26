@@ -9,14 +9,16 @@ Focuses on the five classes with the fewest training images (class 3 first).
 Classes 0 and 2 (265 images each) are already well-represented and are skipped.
 
 Performance: Pre-indexes images by class (one pass), then uses multiprocessing
-for parallel inpainting across all CPU cores.
+for parallel inpainting (spawn-safe on cloud GPU instances, max 8 workers).
 
 Usage:
     python scripts/generate_synthetic_defects.py
-    python scripts/generate_synthetic_defects.py --target_class 3 --limit 20 --workers 8
+    python scripts/generate_synthetic_defects.py --target_class 3 --limit 20 --workers 4
+    python scripts/generate_synthetic_defects.py --no-parallel   # debug mode
 """
 
 import argparse
+import multiprocessing
 import os
 import sys
 from collections import defaultdict
@@ -26,6 +28,18 @@ from pathlib import Path
 import cv2
 import numpy as np
 from tqdm import tqdm
+
+# Force "spawn" on Linux — "fork" deadlocks when OpenCV is built with CUDA
+# (common on AutoDL / cloud GPU instances).
+if hasattr(multiprocessing, "set_start_method"):
+    try:
+        multiprocessing.set_start_method("spawn", force=True)
+    except RuntimeError:
+        pass
+
+# Cap workers — cv2.inpaint is memory-intensive; too many concurrent
+# processes saturate I/O and can OOM on cloud instances.
+_MAX_WORKERS = min(os.cpu_count() or 4, 8)
 
 # Classes ordered by representation scarcity (fewest images first).
 # Class 0 (VHBNM = 265) and class 2 (SVHBNM = 265) are skipped.
@@ -122,8 +136,6 @@ def _is_original(stem: str) -> bool:
 # ---------------------------------------------------------------------------
 
 def main() -> None:
-    cpu_count = os.cpu_count() or 4
-
     parser = argparse.ArgumentParser(
         description="Generate synthetic missing-defect samples (parallel)",
     )
@@ -142,10 +154,16 @@ def main() -> None:
         help="Max synthetic per class (0 = use built-in limits, -1 = unlimited)",
     )
     parser.add_argument(
-        "--workers", type=int, default=cpu_count,
-        help=f"Number of worker processes (default: {cpu_count})",
+        "--workers", type=int, default=_MAX_WORKERS,
+        help=f"Number of worker processes (default: {_MAX_WORKERS}, max: {_MAX_WORKERS})",
+    )
+    parser.add_argument(
+        "--no-parallel", action="store_true",
+        help="Force sequential mode (useful for debugging / resource-constrained instances)",
     )
     args = parser.parse_args()
+
+    workers = min(args.workers, _MAX_WORKERS)
 
     images_dir = Path(args.train_images)
     labels_dir = Path(args.train_labels)
@@ -193,7 +211,7 @@ def main() -> None:
         limit = min(limit, len(candidates))
 
         print(f"\n[Step 5] Class {cls_id}: generating up to {limit} synthetic "
-              f"(from {len(candidates)} candidates, {args.workers} workers)")
+              f"(from {len(candidates)} candidates, {workers} workers)")
 
         suffix = f"_synth_missing_{cls_id}"
         tasks = [
@@ -202,9 +220,11 @@ def main() -> None:
         ]
 
         generated = 0
-        if args.workers > 1:
-            # ── Parallel mode ──
-            with ProcessPoolExecutor(max_workers=args.workers) as executor:
+        use_parallel = workers > 1 and not args.no_parallel
+        if use_parallel:
+            # ── spawn-safe parallel mode ──
+            print(f"         [parallel mode — spawn, {workers} workers]")
+            with ProcessPoolExecutor(max_workers=workers) as executor:
                 futures = {executor.submit(_inpaint_one, task): task for task in tasks}
                 with tqdm(total=len(tasks), desc=f"  Inpainting class {cls_id}", unit="img") as pbar:
                     for future in as_completed(futures):
@@ -217,6 +237,10 @@ def main() -> None:
                         pbar.update(1)
         else:
             # ── Sequential fallback ──
+            if args.no_parallel:
+                print("         [sequential mode] --no-parallel flag set")
+            else:
+                print("         [sequential mode] single worker")
             for task in tqdm(tasks, desc=f"  Inpainting class {cls_id}", unit="img"):
                 try:
                     result = _inpaint_one(task)

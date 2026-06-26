@@ -46,7 +46,7 @@ def _copy_one(copy_args: Tuple[Path, Path]) -> None:
 
 
 def main() -> None:
-    cpu_count = os.cpu_count() or 4
+    _MAX_WORKERS = min(os.cpu_count() or 4, 8)
 
     parser = argparse.ArgumentParser(description="Train/val split with source grouping")
     parser.add_argument("--images_dir", default="data/Defect_dataset/images")
@@ -55,8 +55,8 @@ def main() -> None:
     parser.add_argument("--seed", type=int, default=SEED)
     parser.add_argument("--ratio", type=float, default=SPLIT_RATIO)
     parser.add_argument(
-        "--workers", type=int, default=cpu_count,
-        help=f"Number of I/O threads (default: {cpu_count})",
+        "--workers", type=int, default=_MAX_WORKERS,
+        help=f"Number of I/O threads (default: {_MAX_WORKERS}, max: {_MAX_WORKERS})",
     )
     args = parser.parse_args()
 
