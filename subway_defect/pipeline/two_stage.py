@@ -92,9 +92,16 @@ class TwoStagePipeline:
 
             total_ms = (time.time() - t_start) * 1000
 
+            # Count total slices processed
+            if roi_boxes is not None and len(roi_boxes) > 0:
+                total_slices = self.slicer.roi_tile_count(h, w, roi_boxes)
+            else:
+                total_slices = self.slicer.tile_count(h, w)
+
             return {
                 "defects": defects,
                 "total_time_ms": total_ms,
+                "total_slices": total_slices,
                 "stage1_time_ms": stage1_ms,
                 "stage2_time_ms": stage2_ms,
                 "num_roi_regions": len(roi_boxes) if roi_boxes is not None else 0,

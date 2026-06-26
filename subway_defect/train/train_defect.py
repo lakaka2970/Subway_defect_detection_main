@@ -136,7 +136,7 @@ def _cleanup_gpu(model_obj) -> None:
 
 
 def _resolve_pretrained(args, coco_pretrain_map: dict) -> Optional[str]:
-    """Resolve pretrained weights path with fallback to ``yolo_weights/``.
+    """Resolve pretrained weights path with fallback to ``weights/``.
 
     Returns the resolved path string, or ``None`` if explicit pretrained
     was requested but not found.
@@ -159,14 +159,14 @@ def _resolve_pretrained(args, coco_pretrain_map: dict) -> Optional[str]:
     if pt_path.exists():
         return str(pt_path)
 
-    # Try yolo_weights/ directory
-    yolo_w = Path("yolo_weights") / pt_path.name
+    # Try weights/ directory
+    yolo_w = Path("weights") / pt_path.name
     if yolo_w.exists():
         logger.info("Found pretrained weights: %s", yolo_w)
         return str(yolo_w)
 
     logger.error("Pretrained weights not found: %s", pt_path.name)
-    logger.error("       Place the file in yolo_weights/ or use --pretrained <path>")
+    logger.error("       Place the file in weights/ or use --pretrained <path>")
     return None
 
 

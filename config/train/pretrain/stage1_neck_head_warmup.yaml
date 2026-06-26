@@ -1,10 +1,10 @@
 # ============================================================================
 # Stage 1: Neck + Head Warmup (modern 5-stage pipeline)
 # ============================================================================
-# 目标: 让检测头和 attention 模块先适应接触网 crop 上的小目标分布
+# 目标: 在公共缺陷数据集上 warmup neck + head + attention 模块
 # 初始化: COCO yolo11s.pt 或 yolo11s-P2-EMA-SimAM.yaml
-# 数据: 自制 subway_crops (1024 native resolution crops)
-# 类别: 7 类接触网缺陷
+# 数据: mixed_pretrain (公共缺陷数据集, 1 类 generic_defect)
+# 类别: 1 类 (generic_defect — 所有缺陷合并)
 # 输出: stage1_warmup/weights/best.pt
 #
 # 与 legacy C1 的区别:
@@ -13,6 +13,11 @@
 #   - 极轻增强 (mosaic≤0.2, 无 erasing/copy_paste)
 #   - 30-50 epochs (比 legacy C1 短, neck 收敛更快)
 # ============================================================================
+
+# ── 数据集 ──
+data: data/multi_datasets/mixed_pretrain/data.yaml
+nc: 1
+names: ["generic_defect"]
 
 epochs: 50
 imgsz: 1024

@@ -284,6 +284,7 @@ def generate_crops(
         return stats
 
     # ── Generate crops ─────────────────────────────────────────────────
+    print(f"\nGenerating crops (this may take a while — progress per image):\n", flush=True)
     for split_tag, stems in (("train", train_stems), ("val", val_stems)):
         out_img_dir = output_dir / split_tag / "images"
         out_lbl_dir = output_dir / split_tag / "labels"
@@ -292,8 +293,9 @@ def generate_crops(
 
         img_count = 0
         box_count = 0
+        total_stems = len(stems)
 
-        for stem in sorted(stems):
+        for idx, stem in enumerate(sorted(stems)):
             img_path = _find_image(stem, img_dir)
             if img_path is None:
                 continue
@@ -448,7 +450,13 @@ def generate_crops(
                 neg_count += 1
                 stats["negative_crops"][split_tag] += 1
 
-        print(f"  [{split_tag}] {img_count} positive + {neg_count} negative crops, "
+            # Progress: print every image (flush for remote/container shells)
+            print(f"  [{split_tag}] {idx+1}/{total_stems} {stem}: "
+                  f"{len(entries)} defects, {len(used_centers)} pos + {neg_count} neg crops"
+                  f"  |  cumulative: {img_count} pos, {box_count} boxes",
+                  flush=True)
+
+        print(f"  [{split_tag}] DONE: {img_count} positive + {neg_count} negative crops, "
               f"{box_count} boxes")
 
     # ── Write data.yaml ─────────────────────────────────────────────────

@@ -476,9 +476,7 @@ def _voc_xml_to_yolo_boxes(xml_path: Path, class_map: Dict[str, int],
         if name is None or name.text is None:
             continue
         cls_name = name.text.strip()
-        if cls_name not in class_map:
-            continue
-        cls_id = class_map[cls_name]
+        cls_id = class_map.get(cls_name, 0)  # unknown classes → generic_defect (class 0)
 
         bbox = obj.find("bndbox")
         if bbox is None:
@@ -704,50 +702,98 @@ def convert_voc_dataset(
     """
     key = spec.key
 
-    # Locate annotation and image directories
-    anno_dir = None
-    for cand in ["Annotations", "annotations", "ANNOT", "xmls", "xml"]:
+    # Locate annotation directories (may be multiple in pre-split datasets like NEU-DET)
+    _ANNO_CANDIDATES = ["Annotations", "annotations", "ANNOT", "xmls", "xml", "lable"]
+    _IMG_CANDIDATES = ["JPEGImages", "images", "IMAGES", "imgs", "img", "JPEG"]
+
+    anno_dirs: List[Path] = []
+    for cand in _ANNO_CANDIDATES:
         p = src_dir / cand
         if p.is_dir():
-            anno_dir = p
-            break
-    if anno_dir is None:
+            anno_dirs.append(p)
+    # Search up to 2 levels deep (handles: lable/, train/annotations/, NEU-DET/train/annotations/)
+    if not anno_dirs:
+        for sub in sorted(src_dir.iterdir()):
+            if not sub.is_dir():
+                continue
+            for cand in _ANNO_CANDIDATES:
+                p = sub / cand
+                if p.is_dir():
+                    anno_dirs.append(p)
+            if not anno_dirs:
+                for sub2 in sorted(sub.iterdir()):
+                    if sub2.is_dir():
+                        for cand in _ANNO_CANDIDATES:
+                            p = sub2 / cand
+                            if p.is_dir():
+                                anno_dirs.append(p)
+    if not anno_dirs:
         print(fail(f"[{key}] Cannot find annotations directory under {src_dir}"))
         return False
 
-    img_dir = None
-    for cand in ["JPEGImages", "images", "IMAGES", "imgs", "img", "JPEG"]:
+    img_dirs: List[Path] = []
+    for cand in _IMG_CANDIDATES:
         p = src_dir / cand
         if p.is_dir():
-            img_dir = p
-            break
-    if img_dir is None:
-        # Assume images are in the same directory as annotations
-        img_dir = src_dir
+            img_dirs.append(p)
+    # Search up to 2 levels deep
+    if not img_dirs:
+        for sub in sorted(src_dir.iterdir()):
+            if not sub.is_dir():
+                continue
+            for cand in _IMG_CANDIDATES:
+                p = sub / cand
+                if p.is_dir():
+                    img_dirs.append(p)
+            if not img_dirs:
+                for sub2 in sorted(sub.iterdir()):
+                    if sub2.is_dir():
+                        for cand in _IMG_CANDIDATES:
+                            p = sub2 / cand
+                            if p.is_dir():
+                                img_dirs.append(p)
+    if not img_dirs:
+        img_dirs = [src_dir]  # fallback: search images from src_dir
 
-    print(info(f"[{key}] Annotations: {anno_dir}, Images: {img_dir}"))
+    print(info(f"[{key}] Annotations: {len(anno_dirs)} dir(s), Images: {len(img_dirs)} dir(s)"))
 
     # Build class map (all → generic_defect = class 0)
     class_map = {name: 0 for name in spec.class_names}
 
-    # Find image files
+    # Find image files from all image directories
     img_files: Dict[str, Path] = {}
-    for ext in ("*.jpg", "*.jpeg", "*.png", "*.bmp", "*.JPG", "*.PNG"):
-        for f in img_dir.glob(ext):
-            img_files[f.stem] = f
-        # Also search recursively one level
-        for f in img_dir.glob(f"*/{ext}"):
-            if f.stem not in img_files:
-                img_files[f.stem] = f
+    for img_dir in img_dirs:
+        for ext in ("*.jpg", "*.jpeg", "*.png", "*.bmp", "*.JPG", "*.PNG"):
+            for f in img_dir.glob(ext):
+                if f.stem not in img_files:
+                    img_files[f.stem] = f
+            # Also search recursively up to 2 levels (handles nested structures)
+            for f in img_dir.glob(f"*/{ext}"):
+                if f.stem not in img_files:
+                    img_files[f.stem] = f
+            for f in img_dir.glob(f"*/*/{ext}"):
+                if f.stem not in img_files:
+                    img_files[f.stem] = f
 
-    # Find annotation files
+    # Find annotation files from all annotation directories
+    # Track which split (parent dir name) each stem belongs to
     xml_files: Dict[str, Path] = {}
-    for f in anno_dir.glob("*.xml"):
-        xml_files[f.stem] = f
-    # Also search recursively
-    for f in anno_dir.glob("*/*.xml"):
-        if f.stem not in xml_files:
-            xml_files[f.stem] = f
+    stem_split: Dict[str, str] = {}  # stem → "train" / "val" / ""
+    _SPLIT_NAMES = {"train", "val", "validation", "test"}
+    for ad in anno_dirs:
+        parent = ad.parent.name.lower()
+        split_tag = ""
+        if parent in _SPLIT_NAMES:
+            split_tag = "val" if parent == "validation" else parent
+        for f in ad.glob("*.xml"):
+            if f.stem not in xml_files:
+                xml_files[f.stem] = f
+                stem_split[f.stem] = split_tag
+        # Also search recursively
+        for f in ad.glob("*/*.xml"):
+            if f.stem not in xml_files:
+                xml_files[f.stem] = f
+                stem_split[f.stem] = split_tag
 
     # Match images to annotations
     matched_stems: List[str] = []
@@ -768,39 +814,47 @@ def convert_voc_dataset(
 
     print(info(f"[{key}] Matched {len(matched_stems)} image-annotation pairs"))
 
-    # Train/val split — try to use ImageSets if available
+    # Train/val split — priority: 1) directory-based split  2) ImageSets  3) random
     train_stems: Set[str] = set()
     val_stems: Set[str] = set()
 
-    imageset_dir = src_dir / "ImageSets" / "Main"
-    train_txt = imageset_dir / "train.txt"
-    val_txt = imageset_dir / "val.txt"
-    test_txt = imageset_dir / "test.txt"
-
-    if train_txt.exists() and val_txt.exists():
-        train_stems = set(train_txt.read_text().splitlines())
-        val_stems = set(val_txt.read_text().splitlines())
-        # Filter to only those we have
-        train_stems &= set(matched_stems)
-        val_stems &= set(matched_stems)
-        print(info(f"[{key}] Using ImageSets split: {len(train_stems)} train, {len(val_stems)} val"))
-    elif train_txt.exists():
-        all_split = set(train_txt.read_text().splitlines()) & set(matched_stems)
-        all_list = sorted(all_split)
-        random.seed(SEED)
-        random.shuffle(all_list)
-        split_idx = int(len(all_list) * (1 - val_ratio))
-        train_stems = set(all_list[:split_idx])
-        val_stems = set(all_list[split_idx:])
+    # 1) Check if we already have a directory-based split (e.g. NEU-DET train/validation/)
+    train_from_dir = {s for s in matched_stems if stem_split.get(s) == "train"}
+    val_from_dir = {s for s in matched_stems if stem_split.get(s) in ("val", "validation", "test")}
+    if train_from_dir and val_from_dir:
+        train_stems = train_from_dir
+        val_stems = val_from_dir
+        print(info(f"[{key}] Using directory-based split: {len(train_stems)} train, {len(val_stems)} val"))
     else:
-        # Random split
-        random.seed(SEED)
-        shuffled = sorted(matched_stems)
-        random.shuffle(shuffled)
-        split_idx = int(len(shuffled) * (1 - val_ratio))
-        train_stems = set(shuffled[:split_idx])
-        val_stems = set(shuffled[split_idx:])
-        print(info(f"[{key}] Random split: {len(train_stems)} train, {len(val_stems)} val"))
+        # 2) Try ImageSets/Main/{train,val,test}.txt
+        imageset_dir = src_dir / "ImageSets" / "Main"
+        train_txt = imageset_dir / "train.txt"
+        val_txt = imageset_dir / "val.txt"
+        test_txt = imageset_dir / "test.txt"
+
+        if train_txt.exists() and val_txt.exists():
+            train_stems = set(train_txt.read_text().splitlines())
+            val_stems = set(val_txt.read_text().splitlines())
+            train_stems &= set(matched_stems)
+            val_stems &= set(matched_stems)
+            print(info(f"[{key}] Using ImageSets split: {len(train_stems)} train, {len(val_stems)} val"))
+        elif train_txt.exists():
+            all_split = set(train_txt.read_text().splitlines()) & set(matched_stems)
+            all_list = sorted(all_split)
+            random.seed(SEED)
+            random.shuffle(all_list)
+            split_idx = int(len(all_list) * (1 - val_ratio))
+            train_stems = set(all_list[:split_idx])
+            val_stems = set(all_list[split_idx:])
+        else:
+            # 3) Random split
+            random.seed(SEED)
+            shuffled = sorted(matched_stems)
+            random.shuffle(shuffled)
+            split_idx = int(len(shuffled) * (1 - val_ratio))
+            train_stems = set(shuffled[:split_idx])
+            val_stems = set(shuffled[split_idx:])
+            print(info(f"[{key}] Random split: {len(train_stems)} train, {len(val_stems)} val"))
 
     # Create output directories
     for split, stems in (("train", train_stems), ("val", val_stems)):
@@ -945,13 +999,31 @@ def convert_deeppcb(src_dir: Path, output_dir: Path, val_ratio: float = 0.2) -> 
     # Collect all (image, annotation) pairs
     pairs: List[Tuple[Path, Optional[Path]]] = []
     for grp in groups:
+        # Pattern 1: *_test.jpg recursively (handles nested dirs like groupX/#####/#####_test.jpg)
+        #   Annotation is in sibling *_not/ directory: "00041000_test.jpg" → "00041000.txt"
+        for test_img in sorted(grp.rglob("*_test.jpg")):
+            # Derive annotation stem by stripping "_test" suffix
+            anno_stem = test_img.stem
+            if anno_stem.endswith("_test"):
+                anno_stem = anno_stem[:-5]
+            txt_file = None
+            # First try same-directory annotation
+            candidate = test_img.with_name(f"{anno_stem}.txt")
+            if candidate.exists():
+                txt_file = candidate
+            else:
+                # Search in sibling *_not directories
+                for not_dir in sorted(grp.glob("*_not")):
+                    if not_dir.is_dir():
+                        candidate = not_dir / f"{anno_stem}.txt"
+                        if candidate.exists():
+                            txt_file = candidate
+                            break
+            pairs.append((test_img, txt_file))
+        # Pattern 2: *_not.jpg files directly in group dir (backward compat, some mirrors)
         for test_img in sorted(grp.glob("*_not.jpg")):
             txt_file = test_img.with_suffix(".txt")
-            pairs.append((test_img, txt_file if txt_file.exists() else None))
-        # Also check for non-_not convention (some mirrors might differ)
-        for test_img in sorted(grp.glob("*_test.jpg")):
-            txt_file = test_img.with_name(test_img.stem + ".txt")
-            if (test_img, txt_file) not in pairs:
+            if (test_img, txt_file if txt_file.exists() else None) not in pairs:
                 pairs.append((test_img, txt_file if txt_file.exists() else None))
 
     if not pairs:
@@ -1010,20 +1082,35 @@ def convert_deeppcb(src_dir: Path, output_dir: Path, val_ratio: float = 0.2) -> 
                     try:
                         raw = txt_path.read_text().strip()
                         for line in raw.splitlines():
+                            # Try comma-separated (old 9-value polygon format)
                             parts = line.strip().split(",")
-                            if len(parts) < 9:
+                            if len(parts) < 5:
+                                # Try space/tab-separated (DeepPCB GitHub format: x1 y1 x2 y2 type)
+                                parts = line.strip().split()
+                            # Handle 5-value format: x1 y1 x2 y2 type (bounding box corners)
+                            if len(parts) == 5:
+                                try:
+                                    pts = [float(p) for p in parts[:4]]
+                                    cls_type = int(parts[4])
+                                except ValueError:
+                                    continue
+                                xs = pts[0::2]
+                                ys = pts[1::2]
+                                xmin, xmax = min(xs), max(xs)
+                                ymin, ymax = min(ys), max(ys)
+                            # Handle 9-value format: x1,y1,x2,y2,x3,y3,x4,y4,type (polygon)
+                            elif len(parts) >= 9:
+                                try:
+                                    pts = [float(p) for p in parts[:8]]
+                                    cls_type = int(parts[8])
+                                except ValueError:
+                                    continue
+                                xs = pts[0::2]
+                                ys = pts[1::2]
+                                xmin, xmax = min(xs), max(xs)
+                                ymin, ymax = min(ys), max(ys)
+                            else:
                                 continue
-                            try:
-                                pts = [float(p) for p in parts[:8]]
-                                cls_type = int(parts[8])
-                            except ValueError:
-                                continue
-
-                            # Polygon → axis-aligned bounding box
-                            xs = pts[0::2]
-                            ys = pts[1::2]
-                            xmin, xmax = min(xs), max(xs)
-                            ymin, ymax = min(ys), max(ys)
                             w_box, h_box = xmax - xmin, ymax - ymin
 
                             if w_box < MIN_BBOX_SIDE_PX or h_box < MIN_BBOX_SIDE_PX:

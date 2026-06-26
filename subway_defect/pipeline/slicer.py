@@ -73,6 +73,30 @@ class SmartSlicer:
         n_rows = max(1, math.ceil((h - s) / stride) + 1)
         return n_rows * n_cols
 
+    def roi_tile_count(self, h: int, w: int, roi_boxes: np.ndarray) -> int:
+        """Return number of tiles that intersect with any ROI box."""
+        if roi_boxes is None or len(roi_boxes) == 0:
+            return self.tile_count(h, w)
+
+        s = self.slice_size
+        stride = self.stride
+        n_cols = max(1, math.ceil((w - s) / stride) + 1)
+        n_rows = max(1, math.ceil((h - s) / stride) + 1)
+
+        count = 0
+        for row in range(n_rows):
+            y0 = max(0, min(row * stride, h - s))
+            y1 = y0 + s
+            for col in range(n_cols):
+                x0 = max(0, min(col * stride, w - s))
+                x1 = x0 + s
+                for box in roi_boxes:
+                    rx0, ry0, rx1, ry1 = box
+                    if x0 < rx1 and x1 > rx0 and y0 < ry1 and y1 > ry0:
+                        count += 1
+                        break
+        return count
+
     def roi_tiles(self, img: np.ndarray,
                   roi_boxes: np.ndarray) -> Iterator[Tuple]:
         """Yield tiles that intersect with any ROI bounding box.

@@ -1,10 +1,10 @@
 # ============================================================================
-# Stage 3: Short Fine-Tune (modern 5-stage pipeline)
+# Stage 3: Transfer to Subway Defects (modern 5-stage pipeline)
 # ============================================================================
-# 目标: 真实分布短微调, 早停防退化
+# 目标: 从 mixed_pretrain (1类) 迁移到 subway_crops (7类), 早停防退化
 #       最近训练结果已显示长时间 C3 会退化 (Run D: -0.018 mAP50)
-# 初始化: Stage 2 best.pt
-# 数据: 自制 subway_crops (1280 native resolution crops)
+# 初始化: Stage 2 best.pt (mixed_pretrain, 1 类 generic_defect)
+# 数据: subway_crops (接触网缺陷, 7 类)
 #
 # 与 legacy C3 的区别:
 #   - 缩短到 30 epochs (C3 的 50 epochs 后半程主要是记忆训练集)
@@ -13,6 +13,11 @@
 #   - 每 epoch 保存 (save_period=1), 最终从 best_mAP50-95 选择
 #   - 不使用 last.pt! (last 往往已退化)
 # ============================================================================
+
+# ── 数据集 ──
+data: data/subway_crops/subway_crops.yaml
+nc: 7
+names: ["VHBNM", "VHBNL", "SVHBNM", "SVHBNL", "SVHTNL", "CBHPM", "CBVPM"]
 
 epochs: 30
 imgsz: 1280

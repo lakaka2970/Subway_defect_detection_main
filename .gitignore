@@ -148,20 +148,16 @@ dmypy.json
 # Pyre type checker
 .pyre/
 
-# datasets and projects (ignore /datasets dir at root only to allow for docs/en/datasets dir)
-/datasets
+# datasets and projects
 runs/
 output/
 wandb/
 .DS_Store
 
-# Neural Network weights -----------------------------------------------------------------------------------------------
-weights/
-*.weights
-*.pt
-*.ts
-*.pb
-*.onnx
+# Neural Network weights — KEPT IN VERSION CONTROL for this project
+# weights/           (tracked — model weights are part of deliverable)
+# *.pt               (tracked — model weights are part of deliverable)
+# TensorRT engines are host-specific, do NOT track:
 *.engine
 *.mlmodel
 *.mlpackage
@@ -202,6 +198,31 @@ calibration_*.npy
 *.ico
 *.raw
 
+# ============================================================================
+# Project-specific exclusions (Subway Defect Detection)
+# ============================================================================
+
+# Documentation — excluded from big-repo upload per project policy
+docs/
+
+# Training datasets — proprietary/confidential, not for repo
+data/
+
+# Dev-only test datasets (coco8, dota8, imagenet10)
+/datasets/
+
+# Training outputs — regeneratable
+output/
+
+# Auto-generated calibration artifacts
+calibration_*.npy
+
+# Temporary extraction files
+temp_*.txt
+temp_*.json
+
+# ============================================================================
 # Training logs
+# ============================================================================
 args.yaml
 results.csv

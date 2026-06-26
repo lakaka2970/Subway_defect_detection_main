@@ -86,17 +86,17 @@ def main():
     if args.no_amp:
         config["amp"] = False
 
-    # Verify pretrained file exists — check explicit path, then yolo_weights/
+    # Verify pretrained file exists — check explicit path, then weights/
     if args.pretrained:
         pt_path = Path(args.pretrained)
         if not pt_path.exists():
-            yolo_w = Path("yolo_weights") / pt_path.name
+            yolo_w = Path("weights") / pt_path.name
             if yolo_w.exists():
                 args.pretrained = str(yolo_w)
                 logger.info("Found pretrained weights: %s", args.pretrained)
             else:
                 logger.error("Pretrained weights not found: %s", pt_path.name)
-                logger.error("       Place the file in yolo_weights/ or use --pretrained <path>")
+                logger.error("       Place the file in weights/ or use --pretrained <path>")
                 sys.exit(1)
 
     _check_gpu_memory(required_gb=4.0)

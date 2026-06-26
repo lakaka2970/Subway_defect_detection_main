@@ -1,10 +1,10 @@
 # ============================================================================
 # Stage 2: Small-Object Scale Adaptation (modern 5-stage pipeline)
 # ============================================================================
-# 目标: 全解冻, 1280 原生分辨率 crop, 学习小目标尺度不变特征
+# 目标: 全解冻, 1280 分辨率, 学习小目标尺度不变特征
 #       这是主训练阶段 — 贡献最大的 mAP 提升
 # 初始化: Stage 1 best.pt
-# 数据: 自制 subway_crops (1280 native resolution crops)
+# 数据: mixed_pretrain (公共缺陷数据集, 1 类 generic_defect)
 # 模型: YOLO11s-P2-EMA-SimAM-Lite (推荐) 或 yolo11s-EMA-SimAM
 # 输入: 1280 (固定, 不推荐 YOLO 默认 ±50% 的大范围 multi_scale)
 #
@@ -16,6 +16,11 @@
 #   - 自定义尺度集合 [1024, 1280, 1536] (不直接用 ±50% 到 640)
 #   - patience=40 (防止后半程过拟合)
 # ============================================================================
+
+# ── 数据集 ──
+data: data/multi_datasets/mixed_pretrain/data.yaml
+nc: 1
+names: ["generic_defect"]
 
 epochs: 120
 imgsz: 1280
