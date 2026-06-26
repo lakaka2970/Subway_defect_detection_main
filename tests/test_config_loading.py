@@ -144,19 +144,42 @@ class TestConfigIntegration:
         # Must not contain pseudo-comment keys
         assert not any(str(k).startswith("#") for k in cfg)
 
-    def test_load_pretrain_config(self) -> None:
-        """load_pretrain_config for existing stages returns clean configs."""
+    def test_load_pretrain_config_unified(self) -> None:
+        """load_pretrain_config for unified stages returns clean configs."""
         from subway_defect.train.configs import load_pretrain_config
 
         for stage in [
-            "stage1_neck_head_warmup",
-            "stage2_scale_adaptation",
-            "stage3_short_finetune",
-            "stage4_hard_negative",
+            "stage2_domain_adapt",
+            "stage3_main_training",
+            "stage4_short_finetune",
+            "stage5_hard_negative",
         ]:
             cfg = load_pretrain_config(stage)
             assert isinstance(cfg, dict)
             assert "epochs" in cfg
+            assert not any(str(k).startswith("#") for k in cfg)
+
+    def test_load_pretrain_config_legacy_alias(self) -> None:
+        """Legacy stage names map to unified configs."""
+        from subway_defect.train.configs import load_pretrain_config
+
+        cfg = load_pretrain_config("stage1_neck_head_warmup")
+        assert isinstance(cfg, dict)
+        assert "epochs" in cfg
+
+    def test_load_unified_stage_config(self) -> None:
+        """load_unified_stage_config by number works."""
+        from subway_defect.train.configs import load_unified_stage_config
+
+        for stage_id in [2, 3, 4, 5]:
+            cfg = load_unified_stage_config(stage_id)
+            assert isinstance(cfg, dict)
+            assert "epochs" in cfg
+
+        # p2 is optional — file may or may not exist
+        # Just verify the function signature works
+        with pytest.raises(KeyError):
+            load_unified_stage_config(99)  # invalid stage
             assert not any(str(k).startswith("#") for k in cfg)
 
     def test_check_dict_alignment_rejects_pseudo_comments(self) -> None:

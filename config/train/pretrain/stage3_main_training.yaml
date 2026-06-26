@@ -1,26 +1,27 @@
 # ============================================================================
-# Stage 2: Small-Object Scale Adaptation (modern 5-stage pipeline)
+# Stage 3: Main Training — Native Resolution (unified training pipeline)
 # ============================================================================
-# 目标: 全解冻, 1280 分辨率, 学习小目标尺度不变特征
+# Migrated from: stage2_scale_adaptation.yaml, Phase 5, S2, C2
+#
+# 目标: 全解冻, 1280 原生分辨率, 学习小目标尺度不变特征
 #       这是主训练阶段 — 贡献最大的 mAP 提升
-# 初始化: Stage 1 best.pt
-# 数据: mixed_pretrain (公共缺陷数据集, 1 类 generic_defect)
-# 模型: YOLO11s-P2-EMA-SimAM-Lite (推荐) 或 yolo11s-EMA-SimAM
+# 初始化: Stage 2 best.pt
+# 数据: subway_crops (接触网缺陷, 7 类)
+# 模型: YOLO11s-P2-EMA-SimAM (推荐) 或 yolo11s-EMA-SimAM
 # 输入: 1280 (固定, 不推荐 YOLO 默认 ±50% 的大范围 multi_scale)
 #
 # 与 legacy C2 的区别:
-#   - AdamW + 自适应 LR 替代低效 SGD
+#   - AdamW 替代低效 SGD
 #   - 关闭 erasing/copy_paste (保护小目标)
 #   - mosaic 降到 0.2 (小目标不因 mosaic resize 进一步缩小)
-#   - close_mosaic=40 (13% 纯真实图像精调)
-#   - 自定义尺度集合 [1024, 1280, 1536] (不直接用 ±50% 到 640)
+#   - close_mosaic=40 (33% 纯真实图像精调)
 #   - patience=40 (防止后半程过拟合)
 # ============================================================================
 
 # ── 数据集 ──
-data: data/multi_datasets/mixed_pretrain/data.yaml
-nc: 1
-names: ["generic_defect"]
+data: data/subway_crops/subway_crops.yaml
+nc: 7
+names: ["VHBNM", "VHBNL", "SVHBNM", "SVHBNL", "SVHTNL", "CBHPM", "CBVPM"]
 
 epochs: 120
 imgsz: 1280

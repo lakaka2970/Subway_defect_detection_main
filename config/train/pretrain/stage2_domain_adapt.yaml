@@ -1,23 +1,24 @@
 # ============================================================================
-# Stage 1: Neck + Head Warmup (modern 5-stage pipeline)
+# Stage 2: Custom Domain Adaptation (unified training pipeline)
 # ============================================================================
-# 目标: 在公共缺陷数据集上 warmup neck + head + attention 模块
-# 初始化: COCO yolo11s.pt 或 yolo11s-P2-EMA-SimAM.yaml
-# 数据: mixed_pretrain (公共缺陷数据集, 1 类 generic_defect)
-# 类别: 1 类 (generic_defect — 所有缺陷合并)
-# 输出: stage1_warmup/weights/best.pt
+# Migrated from: stage1_neck_head_warmup.yaml, Phase 4, S1, C1
+#
+# 目标: 从公开缺陷域 (generic_defect) 迁移到接触网 7 类
+# 初始化: Stage 1 best.pt
+# 数据: subway_crops (接触网缺陷, 7 类)
+# 输出: stage2_domain_adapt/weights/best.pt
 #
 # 与 legacy C1 的区别:
 #   - 不仅训练 head, 还训练 neck + attention (freeze 更少)
 #   - AdamW 替代 SGD
-#   - 极轻增强 (mosaic≤0.2, 无 erasing/copy_paste)
-#   - 30-50 epochs (比 legacy C1 短, neck 收敛更快)
+#   - 极轻增强 (mosaic≤0.1, 无 erasing/copy_paste)
+#   - 50 epochs (neck 收敛快)
 # ============================================================================
 
 # ── 数据集 ──
-data: data/multi_datasets/mixed_pretrain/data.yaml
-nc: 1
-names: ["generic_defect"]
+data: data/subway_crops/subway_crops.yaml
+nc: 7
+names: ["VHBNM", "VHBNL", "SVHBNM", "SVHBNL", "SVHTNL", "CBHPM", "CBVPM"]
 
 epochs: 50
 imgsz: 1024

@@ -82,19 +82,26 @@ _LEGACY_STAGES: Dict[str, Dict] = {
            "config_key": "finetune", "name": "c3_finetune"},
 }
 
-# Modern 5-stage (v2)
-_MODERN_STAGES: Dict[str, Dict] = {
-    "0":  {"label": "Stage 0: Data Sanity Check",              "vram_gb": 4.0,
+# Unified training stages (recommended)
+_UNIFIED_STAGES: Dict[str, Dict] = {
+    "0":  {"label": "Stage 0 (optional): Data Sanity Check",       "vram_gb": 4.0,
            "config_key": None, "name": "stage0_sanity"},
-    "1":  {"label": "Stage 1: Neck + Head Warmup",             "vram_gb": 6.0,
-           "config_key": "stage1_neck_head_warmup", "name": "stage1_warmup"},
-    "2":  {"label": "Stage 2: Small-Object Scale Adaptation",  "vram_gb": 10.0,
-           "config_key": "stage2_scale_adaptation", "name": "stage2_adaptation"},
-    "3":  {"label": "Stage 3: Short Fine-Tune",                "vram_gb": 8.0,
-           "config_key": "stage3_short_finetune", "name": "stage3_finetune"},
-    "4":  {"label": "Stage 4: Hard Negative Mining + Calibration", "vram_gb": 8.0,
-           "config_key": "stage4_hard_negative", "name": "stage4_hard_negative"},
+    "p2": {"label": "Stage P2 (optional): TT100K P2 Head Warmup",  "vram_gb": 6.0,
+           "config_key": "stage_p2_tiny_pretrain", "name": "stage_p2"},
+    "1":  {"label": "Stage 1: Public Defect Pretraining",          "vram_gb": 8.0,
+           "config_key": "stage1_public_pretrain", "name": "stage1_public"},
+    "2":  {"label": "Stage 2: Custom Domain Adaptation",           "vram_gb": 6.0,
+           "config_key": "stage2_domain_adapt", "name": "stage2_adapt"},
+    "3":  {"label": "Stage 3: Main Training (1280 native)",        "vram_gb": 10.0,
+           "config_key": "stage3_main_training", "name": "stage3_main"},
+    "4":  {"label": "Stage 4: Short Fine-Tune",                    "vram_gb": 8.0,
+           "config_key": "stage4_short_finetune", "name": "stage4_finetune"},
+    "5":  {"label": "Stage 5 (optional): Hard Negative Mining",    "vram_gb": 8.0,
+           "config_key": "stage5_hard_negative", "name": "stage5_hard_neg"},
 }
+
+# Legacy alias for backward compatibility
+_MODERN_STAGES = _UNIFIED_STAGES
 
 from subway_defect.classes import TRAIN_CLASSES as DEFECT_CLASS_NAMES
 # Keep the local alias for backward compatibility
@@ -500,27 +507,37 @@ Examples:
         logger.info("VRAM manually set to %.1f GB", args.vram)
 
     # ── Resolve stage plan ─────────────────────────────────────────
+    unified_stage_keys = {"0", "p2", "1", "2", "3", "4", "5"}
+    legacy_stage_keys = {"c1", "c2", "c3"}
+
     if args.stages is None:
-        # Default: legacy 3-stage
+        # Default: legacy 3-stage (backward compatible)
+        logger.warning(
+            "No --stages specified — using legacy C1/C2/C3. "
+            "For the recommended unified pipeline, use: --stages 1 2 3 4 --pretrain-config-dir"
+        )
         stage_plan = [("c1", True), ("c2", True), ("c3", True)]
         stage_map = _LEGACY_STAGES
-        use_modern = False
-    elif all(s in _LEGACY_STAGES for s in args.stages):
+        use_unified = False
+    elif all(s in legacy_stage_keys for s in args.stages):
         # Explicit legacy stage names
+        logger.warning(
+            "Legacy C1/C2/C3 stage names detected. "
+            "Consider migrating to unified stages: --stages 1 2 3 4 --pretrain-config-dir"
+        )
         stage_plan = [(s, True) for s in args.stages]
         stage_map = _LEGACY_STAGES
-        use_modern = False
-        # Fill in skipped
+        use_unified = False
         for s in ("c1", "c2", "c3"):
             if s not in args.stages:
                 stage_plan.append((s, False))
     else:
-        # Modern numeric stages
-        stage_plan = [(s, True) for s in args.stages]
-        stage_map = _MODERN_STAGES
-        use_modern = True
-        # Fill in skipped
-        for s in ("0", "1", "2", "3", "4"):
+        # Unified stages
+        stage_plan = [(s, True) for s in args.stages if s in _UNIFIED_STAGES]
+        stage_map = _UNIFIED_STAGES
+        use_unified = True
+        # Fill in skipped for display
+        for s in sorted(unified_stage_keys, key=lambda k: (k.isdigit(), k)):
             if s not in args.stages:
                 stage_plan.append((s, False))
 
@@ -542,7 +559,7 @@ Examples:
         logger.info("  [%s] %s — %s", status, stage_key, info["label"])
     logger.info("  Output: %s", run_dir)
     logger.info("  Model:  %s", args.model)
-    logger.info("  Mode:   %s", "modern 5-stage" if use_modern else "legacy 3-stage")
+    logger.info("  Mode:   %s", "unified stages" if use_unified else "legacy 3-stage")
 
     if args.dry_run:
         logger.info("[DRY-RUN] Exiting without training")
@@ -557,7 +574,7 @@ Examples:
 
         info = stage_map[stage_key]
 
-        if stage_key == "0" and use_modern:
+        if stage_key == "0" and use_unified:
             # Stage 0: Sanity check (no training)
             _run_sanity_check(args, DEFECT_CLASS_NAMES, base)
         else:

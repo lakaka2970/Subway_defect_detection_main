@@ -7,14 +7,16 @@
 ```
 config/
 ├── train/                     # 训练超参数
-│   ├── warmup.yaml            # C1 — Head Warmup [LEGACY — 推荐用 pretrain/]
-│   ├── full.yaml              # C2 — Full Training [LEGACY — 推荐用 pretrain/]
-│   ├── finetune.yaml          # C3 — Fine-Tune   [LEGACY — 推荐用 pretrain/]
-│   └── pretrain/              # 现代五阶段训练配置 (推荐)
-│       ├── stage1_neck_head_warmup.yaml
-│       ├── stage2_scale_adaptation.yaml
-│       ├── stage3_short_finetune.yaml
-│       └── stage4_hard_negative.yaml
+│   ├── warmup.yaml            # [LEGACY] C1 Head Warmup
+│   ├── full.yaml              # [LEGACY] C2 Full Training
+│   ├── finetune.yaml          # [LEGACY] C3 Fine-Tune
+│   └── pretrain/              # 统一训练阶段配置 (推荐)
+│       ├── stage1_public_pretrain.yaml     # Stage 1: 公开缺陷预训练 (生成)
+│       ├── stage2_domain_adapt.yaml        # Stage 2: 领域适配
+│       ├── stage3_main_training.yaml       # Stage 3: 主训练
+│       ├── stage4_short_finetune.yaml      # Stage 4: 短微调
+│       ├── stage5_hard_negative.yaml       # Stage 5: 难负样本 (可选)
+│       └── stage_p2_tiny_pretrain.yaml     # Stage P2: P2头预热 (可选, 生成)
 ├── model/                     # 模型推理参数
 │   └── inference.yaml         # 推理 & 验证默认值
 └── README.md                  # 本文件
@@ -24,41 +26,51 @@ config/
 
 ## 训练模式
 
-### 现代五阶段 (推荐)
+### 统一训练阶段 (推荐)
 
-使用 `config/train/pretrain/` 下的配置, 配合 `--stages` 和 `--pretrain-config-dir` 参数:
+**推荐使用一键自动化**：
+
+```bash
+python scripts/train_pipeline.py --model yolo11m-EMA-SimAM --device 0
+```
+
+手动逐步训练：
 
 ```bash
 train-defect --data data/subway_crops/subway_crops.yaml \
     --model subway_defect/models/yolo11s-P2-EMA-SimAM.yaml \
-    --coco_pretrain --device 0 --stages 1 2 3 --pretrain-config-dir
+    --coco_pretrain --device 0 --stages 1 2 3 4 --pretrain-config-dir
 ```
 
 | 阶段 | 文件 | epochs | imgsz | 优化器 | lr0 | 关键特性 |
 |------|------|--------|-------|--------|-----|----------|
-| S1 | `stage1_neck_head_warmup.yaml` | 50 | 1024 | AdamW | 0.001 | 冻结 backbone 前 60%, 训练 neck+head+attention |
-| S2 | `stage2_scale_adaptation.yaml` | 120 | 1280 | AdamW | 0.0008 | 全解冻, mosaic=0.2, 无 erasing/copy_paste, patience=40 |
-| S3 | `stage3_short_finetune.yaml` | 30 | 1280 | AdamW | 3e-5 | 短微调, patience=8, 每 epoch 保存, 选择 best_mAP50-95 |
-| S4 | `stage4_hard_negative.yaml` | 30 | 1280 | AdamW | 2e-5 | Hard negative mining, 零增强, 每类阈值校准 |
+| Stage 1 | `stage1_public_pretrain.yaml` | 120 | 1024 | AdamW | 0.001 | 公开缺陷预训练, generic_defect 单类 |
+| Stage 2 | `stage2_domain_adapt.yaml` | 50 | 1024 | AdamW | 0.001 | 冻结 backbone 60%, →7类接触网 |
+| Stage 3 | `stage3_main_training.yaml` | 120 | 1280 | AdamW | 0.0008 | 全解冻主训练, mosaic=0.2, patience=40 |
+| Stage 4 | `stage4_short_finetune.yaml` | 30 | 1280 | AdamW | 3e-5 | 短微调, patience=8, 每 epoch 保存 |
+| Stage 5 | `stage5_hard_negative.yaml` | 30 | 1280 | AdamW | 2e-5 | (可选) 难负样本+阈值校准 |
+| Stage P2 | `stage_p2_tiny_pretrain.yaml` | 80 | 1024 | AdamW | 0.001 | (可选) P2头预热, 仅P2模型 |
 
-**与 legacy 三阶段的关键区别**:
-- 每阶段可使用 **不同的数据集** (stage YAML 中指定 `data`/`nc`/`names`)
-- AdamW 全程替代 SGD (自适应学习率, 不依赖动量连续性)
+**关键特性**:
+- 每阶段可独立使用不同数据集 (`data`/`nc`/`names` 在 YAML 内指定)
+- AdamW 全程替代 SGD (自适应学习率)
 - 极轻增强 (mosaic≤0.2, 无 erasing/copy_paste) 保护小目标
-- 短 C3 + early stopping 防止过拟合退化
-- 训练过程自动记录 per-class AP、loss dynamics、hard examples
+- 每阶段产出可独立验证，问题可精确定位
 
-### Legacy 三阶段 (向后兼容)
+<details>
+<summary><b>Legacy C1/C2/C3 三阶段（向后兼容，不推荐）</b></summary>
 
-保留原有 `config/train/warmup|full|finetune.yaml`, 不加 `--stages` 时默认使用:
+不加 `--stages` 时默认使用 `config/train/{warmup,full,finetune}.yaml`:
 
-| 阶段 | 文件 | epochs | imgsz | 优化器 | lr0 | 关键特性 |
-|------|------|--------|-------|--------|-----|----------|
-| C1 | `warmup.yaml` | 50 | 1024 | SGD | 0.001 | 冻结backbone, mosaic=0.5 |
-| C2 | `full.yaml` | 300 | 1280 | AdamW | 0.001 | multi_scale=0.5, mosaic=0.3, erasing=0.1 |
-| C3 | `finetune.yaml` | 100 | 1280 | AdamW | 5e-5 | 极轻量增强, copy_paste/erasing禁用 |
+| 阶段 | 文件 | epochs | imgsz | 优化器 | lr0 | 限制 |
+|------|------|--------|-------|--------|-----|------|
+| C1 | `warmup.yaml` | 50 | 1024 | SGD | 0.001 | 仅训 head |
+| C2 | `full.yaml` | 300 | 1280 | AdamW | 0.001 | 增强过强, 小目标退化 |
+| C3 | `finetune.yaml` | 100 | 1280 | AdamW | 5e-5 | 时间长反而过拟合 |
 
-### v2 优化要点 (2025-06-25)
+</details>
+
+### v2 优化历史 (2025-06-25) — 已融入统一阶段
 
 基于四次完整训练的深入分析（详见 `docs/plans/2026-06-25-analysis-feature-learning-efficiency.md`）：
 
@@ -104,13 +116,13 @@ train-defect --data data/subway_crops/subway_crops.yaml \
 
 ## VRAM 估算参考
 
-| 模型 | imgsz=1024 | imgsz=1280 |
-|------|-----------|-----------|
-| yolo11n | ~0.25 GB/sample | — |
-| yolo11s | ~0.80 GB/sample | ~1.25 GB/sample |
-| yolo11s-P2 | ~1.05 GB/sample | ~1.64 GB/sample |
-| yolo11m | ~1.10 GB/sample | ~1.72 GB/sample |
-| yolo11m-P2 | ~1.40 GB/sample | ~2.19 GB/sample |
+| 模型 | imgsz=640 | imgsz=1024 | imgsz=1280 |
+|------|----------|-----------|-----------|
+| yolo11n | ~0.25 GB/sample | ~0.45 GB/sample | ~0.70 GB/sample |
+| yolo11s | ~0.35 GB/sample | ~0.80 GB/sample | ~1.25 GB/sample |
+| yolo11s-P2 | ~0.45 GB/sample | ~1.05 GB/sample | ~1.64 GB/sample |
+| yolo11m | ~0.55 GB/sample | ~1.10 GB/sample | ~1.72 GB/sample |
+| yolo11m-P2 | ~0.70 GB/sample | ~1.40 GB/sample | ~2.19 GB/sample |
 
 RTX 4090 (24GB): yolo11s @ 1280 推荐 batch=10~12, yolo11s-P2 @ 1280 推荐 batch=6~8。
 RTX 5090 (32GB): yolo11s @ 1280 推荐 batch=14~16, yolo11s-P2 @ 1280 推荐 batch=10~12。

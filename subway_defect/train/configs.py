@@ -59,6 +59,8 @@ class HardwareProfile:
     # Key: (model_family, imgsz)  →  GB VRAM per sample with mosaic + mixup + AMP
     _VRAM_PER_SAMPLE: ClassVar[Dict[Tuple[str, int], float]] = {
         ("yolo11n", 640):   0.25,
+        ("yolo11n", 1024):  0.45,    # ROI training at higher res
+        ("yolo11n", 1280):  0.70,
         ("yolo11s", 640):   0.35,
         ("yolo11s", 1024):  0.80,
         ("yolo11s", 1280):  1.25,   # ~0.80 × (1280/1024)²
@@ -523,6 +525,10 @@ def _safe_load_yaml(filepath: Path) -> dict:
 def load_train_config(stage: str) -> dict:
     """Load training hyperparameters from ``config/train/<stage>.yaml``.
 
+    .. deprecated::
+        Legacy C1/C2/C3 configs.  Use :func:`load_pretrain_config` or
+        :func:`load_unified_stage_config` for new training runs.
+
     Args:
         stage: One of ``"warmup"``, ``"full"``, ``"finetune"``.
 
@@ -553,14 +559,22 @@ def load_inference_config() -> dict:
 
 
 def load_pretrain_config(stage_name: str) -> dict:
-    """Load a multi-source pretraining stage config from ``config/train/pretrain/``.
+    """Load a unified stage config from ``config/train/pretrain/``.
 
     Args:
-        stage_name: E.g. ``"stage1_neck_head_warmup"``,
-            ``"stage2_scale_adaptation"``, ``"stage3_short_finetune"``,
-            ``"stage4_hard_negative"``, or one of the public-dataset
-            phase configs like ``"phase2_tiny_pretrain"``,
-            ``"phase3_public_defect"``.
+        stage_name: One of:
+            - ``"stage_p2_tiny_pretrain"`` — Stage P2 (optional) TT100K P2 head
+            - ``"stage1_public_pretrain"`` — Stage 1 public defect pretraining
+            - ``"stage2_domain_adapt"`` — Stage 2 domain adaptation
+            - ``"stage3_main_training"`` — Stage 3 main training
+            - ``"stage4_short_finetune"`` — Stage 4 short fine-tune
+            - ``"stage5_hard_negative"`` — Stage 5 (optional) hard negative
+
+        Also accepts legacy names for backward compatibility:
+        ``"stage1_neck_head_warmup"`` → ``stage2_domain_adapt``,
+        ``"stage2_scale_adaptation"`` → ``stage3_main_training``,
+        ``"stage3_short_finetune"`` → ``stage4_short_finetune``,
+        ``"stage4_hard_negative"`` → ``stage5_hard_negative``.
 
     Returns:
         Config dict ready to unpack into ``YOLO.train(**config)``.
@@ -568,7 +582,16 @@ def load_pretrain_config(stage_name: str) -> dict:
     Raises:
         FileNotFoundError: If the YAML file doesn't exist.
     """
-    path = _CONFIG_DIR / "train" / "pretrain" / f"{stage_name}.yaml"
+    # Legacy name → unified name mapping (backward compatibility)
+    _LEGACY_UNIFIED_MAP = {
+        "stage1_neck_head_warmup": "stage2_domain_adapt",
+        "stage2_scale_adaptation": "stage3_main_training",
+        "stage3_short_finetune": "stage4_short_finetune",
+        "stage4_hard_negative": "stage5_hard_negative",
+    }
+    resolved = _LEGACY_UNIFIED_MAP.get(stage_name, stage_name)
+
+    path = _CONFIG_DIR / "train" / "pretrain" / f"{resolved}.yaml"
     config = _safe_load_yaml(path)
     if not config:
         raise FileNotFoundError(
@@ -578,3 +601,34 @@ def load_pretrain_config(stage_name: str) -> dict:
             f"then 'python scripts/multi_source_pretrain_yaml.py' to generate configs."
         )
     return config
+
+
+_UNIFIED_STAGE_CONFIG_MAP = {
+    1: "stage1_public_pretrain",
+    2: "stage2_domain_adapt",
+    3: "stage3_main_training",
+    4: "stage4_short_finetune",
+    5: "stage5_hard_negative",
+    "p2": "stage_p2_tiny_pretrain",
+}
+
+
+def load_unified_stage_config(stage: int | str) -> dict:
+    """Load a training stage config by unified stage number.
+
+    Args:
+        stage: Stage number (1-5) or ``"p2"`` for the optional P2 stage.
+
+    Returns:
+        Config dict ready to unpack into ``YOLO.train(**config)``.
+
+    Raises:
+        KeyError: If *stage* is not a valid unified stage.
+        FileNotFoundError: If the config file doesn't exist.
+    """
+    if stage not in _UNIFIED_STAGE_CONFIG_MAP:
+        raise KeyError(
+            f"Unknown unified stage '{stage}'. "
+            f"Valid: {sorted(_UNIFIED_STAGE_CONFIG_MAP, key=str)}"
+        )
+    return load_pretrain_config(_UNIFIED_STAGE_CONFIG_MAP[stage])
