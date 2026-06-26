@@ -87,7 +87,10 @@ class HardwareProfile:
             if torch.cuda.is_available():
                 prop = torch.cuda.get_device_properties(0)
                 profile.gpu_name = prop.name
-                profile.vram_gb = prop.total_mem / (1024 ** 3)
+                # PyTorch 2.5+ uses `total_memory`; older versions also had
+                # `total_memory`. Use getattr for safety + mem_get_info fallback.
+                profile.vram_gb = getattr(prop, "total_memory",
+                                          getattr(prop, "total_mem", 0)) / (1024**3)
                 # Fallback: some drivers / container runtimes report total_mem=0
                 # even when CUDA is available. Use mem_get_info as backup.
                 if profile.vram_gb <= 0:
