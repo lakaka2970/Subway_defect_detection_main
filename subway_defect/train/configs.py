@@ -16,6 +16,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import ClassVar, Dict, Optional, Tuple
 
+from subway_defect import PROJECT_ROOT
+
 logger = logging.getLogger(__name__)
 
 import yaml
@@ -475,7 +477,7 @@ def apply_hardware_profile(
 # YAML-based config loading
 # ============================================================================
 
-_CONFIG_DIR = Path(__file__).resolve().parents[2] / "config"
+_CONFIG_DIR = PROJECT_ROOT / "config"
 
 
 def _load_yaml(filepath: Path) -> dict:

@@ -6,7 +6,7 @@ Extracts COCO images from ``/root/autodl-pub/COCO*/`` and downloads or
 generates YOLO-format labels, producing a standard Ultralytics-compatible
 directory tree::
 
-    datasets/coco/
+    test_fixtures/coco/
     ├── images/
     │   ├── train2014/       # (or train2017 depending on source)
     │   └── val2014/
@@ -20,7 +20,7 @@ directory tree::
 Usage::
 
     python scripts/setup_coco_from_autodl.py
-    python scripts/setup_coco_from_autodl.py --output datasets/coco
+    python scripts/setup_coco_from_autodl.py --output test_fixtures/coco
     python scripts/setup_coco_from_autodl.py --dry-run
 """
 
@@ -48,7 +48,7 @@ except ImportError:
 # ── Constants ────────────────────────────────────────────────────────────
 
 AUTODL_PUB = Path("/root/autodl-pub")
-DEFAULT_OUTPUT = Path("datasets/coco")
+DEFAULT_OUTPUT = Path("test_fixtures/coco")
 
 # Ultralytics assets for YOLO-format COCO labels
 ULTRALYTICS_ASSETS = "https://github.com/ultralytics/assets/releases/download/v0.0.0"

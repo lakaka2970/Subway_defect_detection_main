@@ -209,7 +209,7 @@ docs/
 data/
 
 # Dev-only test datasets (coco8, dota8, imagenet10)
-/datasets/
+/test_fixtures/
 
 # Training outputs — regeneratable
 output/

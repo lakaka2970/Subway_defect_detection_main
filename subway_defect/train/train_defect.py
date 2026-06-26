@@ -58,6 +58,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
+from subway_defect import PROJECT_ROOT
 from subway_yolo import YOLO
 
 from subway_defect.train.configs import (
@@ -530,7 +531,7 @@ Examples:
 
     # ── Generate timestamp & run directory ─────────────────────────
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    run_dir = Path(__file__).resolve().parents[2] / "output" / timestamp
+    run_dir = PROJECT_ROOT / "output" / timestamp
     base = {"data": args.data, "device": args.device, "project": str(run_dir)}
 
     # ── Resolve pretrained weights ─────────────────────────────────

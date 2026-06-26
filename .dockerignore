@@ -30,6 +30,12 @@ ENV/
 *.log
 benchmarks.log
 runs/
+output/
+data/
+test_fixtures/
+weights/
+*.engine
+*.pt
 
 # Dependencies
 node_modules/

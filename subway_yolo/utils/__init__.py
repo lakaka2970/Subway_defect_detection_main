@@ -1351,7 +1351,7 @@ class SettingsManager(JSONDict):
         self.version = version
         self.defaults = {
             "settings_version": version,  # Settings schema version
-            "datasets_dir": str(datasets_root / "datasets"),  # Datasets directory
+            "datasets_dir": str(datasets_root / "test_fixtures"),  # Test fixtures / datasets directory
             "weights_dir": str(root / "weights"),  # Model weights directory
             "runs_dir": str(root / "runs"),  # Experiment runs directory
             "uuid": hashlib.sha256(str(uuid.getnode()).encode()).hexdigest(),  # SHA-256 anonymized UUID hash

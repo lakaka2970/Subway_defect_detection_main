@@ -14,3 +14,10 @@ Key packages:
     deployment   — TensorRT export + FastAPI inference server (vehicle/ground modes)
     synthetic    — Inpainting-based synthetic defect generation
 """
+
+from pathlib import Path
+
+#: Absolute path to the project root directory.
+#: Use this instead of ``Path(__file__).resolve().parents[N]`` to keep path
+#: resolution robust against directory reorganisation.
+PROJECT_ROOT = Path(__file__).resolve().parent.parent

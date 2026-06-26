@@ -37,12 +37,20 @@ Subway_defect_AI/
 │
 ├── scripts/                       # 数据集工具脚本
 │   ├── prepare_dataset.py         # 一键数据集准备
+│   ├── split_dataset.py           # 训练/验证集划分
 │   ├── generate_native_crops.py   # 原生分辨率 crop 生成
 │   ├── validate_dataset.py        # 数据集完整性校验
-│   └── multi_source_dataset_builder.py  # 多源公开数据集构建器
+│   ├── multi_source_dataset_builder.py  # 多源公开数据集构建器
+│   ├── multi_source_pretrain_yaml.py    # 多源预训练 YAML 生成器
+│   ├── create_defect_data_yaml.py       # 数据集 YAML 创建
+│   ├── fix_classes_txt.py               # classes.txt 修复
+│   ├── generate_scene_augmentations.py  # 场景增强生成
+│   ├── generate_synthetic_defects.py    # 合成缺陷生成
+│   └── setup_coco_from_autodl.py        # AutoDL COCO 数据集设置
 │
 ├── tests/                         # 测试套件（pytest, 773 用例）
-├── weights/                       # 预训练权重（检测 n/s/m + COCO 分类/分割/姿态/旋转框）
+├── test_fixtures/                 # 测试夹具（coco8/dota8/imagenet10, 按需下载）
+├── weights/                       # 预训练权重（检测 n/s/m, 测试用 yolo26n）
 ├── pyproject.toml                 # 包配置 + CLI 入口点
 ├── README.md                      # 本文件 — 结构与使用说明
 ├── SPECIFICATION.md               # 完整规格说明书（需求/架构/API/数据/模型/测试）
