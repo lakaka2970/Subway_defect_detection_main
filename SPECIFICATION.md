@@ -68,7 +68,7 @@
 
 #### 接口规范遵循
 
-本项目的 AI 模型（深度学习推理引擎）与前后端软件系统之间的接口规范定义在 `subway_defect/docs/` 目录中的设计文档内：
+本项目的 AI 模型（深度学习推理引擎）与前后端软件系统之间的接口规范定义在 `docs/` 目录中的设计文档内：
 
 | 文档 | 内容 |
 |------|------|
@@ -663,14 +663,17 @@ generate_missing_defect(
 ### 7.4 数据集目录结构
 
 ```
-datasets/
-├── roi/
-│   └── roi_data.yaml              # ROI 提案器数据集配置
-├── defects/
-│   └── defect_data.yaml           # 缺陷检测数据集配置
-├── calibration/                   # INT8 校准数据集（200-500 张）
-├── synthetic/                     # 合成缺陷输出
-└── latest/ -> v2.0/               # 最新稳定版本符号链接
+data/
+├── Defect_dataset/                 # 自制接触网数据集
+│   ├── images/{train,val}/
+│   ├── labels/{train,val}/
+│   └── defect_data.yaml
+├── multi_datasets/                 # 多源公开数据集
+│   ├── public/{deeppcb,gc10_det,neu_det}/
+│   └── mixed_pretrain/
+├── roi/                            # ROI 提案器数据集配置
+│   └── roi_data.yaml
+└── calibration/                    # INT8 校准数据集（200-500 张）
 ```
 
 ---
@@ -947,7 +950,7 @@ subway-server --port 8001 --model best.pt --model_b best_p2.pt --mode ground
 ### 12.4 数据集版本管理
 
 ```
-datasets/
+data/
 ├── v1.0/   (500 张, 初始版本)
 ├── v1.1/   (+200 张, 开口销类别补充)
 ├── v1.2/   (+350 张, 隧道段补充)
