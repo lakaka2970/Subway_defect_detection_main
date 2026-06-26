@@ -333,6 +333,18 @@ def _run_stage(
     cfg["project"] = str(_PROJECT_ROOT / "output")
     cfg["name"] = f"stage{stage_id}"
 
+    # ── Per-stage dataset resolution ──────────────────────────────
+    # The stage YAML may contain dataset keys (path, train, val, nc, names)
+    # which are NOT valid YOLO training arguments. Extract them and pass
+    # the config file itself as the data= argument, or write a temp data.yaml.
+    dataset_keys = {"path", "train", "val", "nc", "names", "test"}
+    has_inline_data = any(k in cfg for k in {"path", "train"})
+    if has_inline_data:
+        # The config file doubles as a data YAML — use it directly
+        cfg["data"] = str(cfg_path.resolve())
+        for k in dataset_keys:
+            cfg.pop(k, None)
+
     # Resolve pretrained weights
     if pretrained and pretrained.exists():
         cfg["pretrained"] = str(pretrained)
