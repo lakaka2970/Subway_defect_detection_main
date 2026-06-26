@@ -200,16 +200,11 @@ def _load_stage_config(stage_key: str, use_pretrain_dir: bool = False) -> dict:
         Config dict.
     """
     if use_pretrain_dir:
-        from subway_defect.train.configs import _CONFIG_DIR
-        import yaml
+        from subway_defect.train.configs import _CONFIG_DIR, _safe_load_yaml
         path = _CONFIG_DIR / "train" / "pretrain" / f"{stage_key}.yaml"
-        if path.exists():
-            with open(path, "r", encoding="utf-8") as f:
-                config = yaml.safe_load(f) or {}
-            if config:
-                # Strip comment-only keys (starting with #)
-                config = {k: v for k, v in config.items() if not str(k).startswith("#")}
-                return config
+        config = _safe_load_yaml(path)
+        if config:
+            return config
         logger.warning("Pretrain config not found: %s — falling back to legacy", path)
 
     # Fall back to legacy config

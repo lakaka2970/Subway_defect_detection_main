@@ -241,9 +241,9 @@ def run_preflight(
             continue
 
         # Quick check: does the data YAML referenced by the config exist?
-        import yaml as _yaml
         try:
-            cfg = _yaml.safe_load(cfg_path.read_text(encoding="utf-8"))
+            from subway_defect.train.configs import _safe_load_yaml
+            cfg = _safe_load_yaml(cfg_path)
         except Exception:
             continue  # syntax errors caught by the training step
 
@@ -314,8 +314,8 @@ def _estimate_batch(
         phase = PHASE_DEFS.get(pid, {})
         cfg_path = _PRETRAIN_CONFIG_DIR / phase.get("yaml", "")
         if cfg_path.exists():
-            import yaml
-            cfg = yaml.safe_load(cfg_path.read_text(encoding="utf-8"))
+            from subway_defect.train.configs import _safe_load_yaml
+            cfg = _safe_load_yaml(cfg_path)
             imgsz = max(imgsz, cfg.get("imgsz", 1024))
 
     # Map model_key to family
@@ -394,9 +394,9 @@ def _run_phase(
 
     # ── Build training command ──
     # We use the YOLO Python API directly (not CLI) for reliable path handling.
-    import yaml as _yaml
+    from subway_defect.train.configs import _safe_load_yaml
 
-    cfg = _yaml.safe_load(cfg_path.read_text(encoding="utf-8"))
+    cfg = _safe_load_yaml(cfg_path)
     cfg["batch"] = batch
     cfg["workers"] = workers
     cfg["device"] = device

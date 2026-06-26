@@ -504,8 +504,21 @@ def check_dict_alignment(
     if mismatched := [k for k in custom_keys if k not in base_keys and k not in allowed_custom_keys]:
         from difflib import get_close_matches
 
+        # Detect pseudo-comment keys (keys starting with '#')
+        pseudo_comment_keys = [k for k in mismatched if str(k).startswith("#")]
+        real_mismatched = [k for k in mismatched if k not in pseudo_comment_keys]
+
         string = ""
-        for x in mismatched:
+        if pseudo_comment_keys:
+            string += (
+                f"\n{colorstr('yellow', 'bold', 'Pseudo-comment keys detected:')}\n"
+                f"  Keys like {[str(k)[:50] + '…' if len(str(k)) > 50 else str(k) for k in pseudo_comment_keys[:5]]}\n"
+                f"  look like they were meant to be YAML comments.\n"
+                f"  Use '# comment' (YAML comment) instead of \"'# comment': value\" (quoted key).\n"
+                f"  The subway_defect training CLI automatically strips these — "
+                f"use 'train-defect' or 'python scripts/train_pipeline.py'.\n"
+            )
+        for x in real_mismatched:
             matches = get_close_matches(x, base_keys)  # key list
             matches = [f"{k}={base[k]}" if base.get(k) is not None else k for k in matches]
             match_str = f"Similar arguments are i.e. {matches}." if matches else ""

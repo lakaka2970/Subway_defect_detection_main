@@ -483,12 +483,41 @@ def apply_hardware_profile(
 _CONFIG_DIR = PROJECT_ROOT / "config"
 
 
-def _load_yaml(filepath: Path) -> dict:
-    """Load a YAML config file, returning an empty dict if missing."""
-    if filepath.exists():
-        with open(filepath, "r", encoding="utf-8") as f:
-            return yaml.safe_load(f) or {}
-    return {}
+def _safe_load_yaml(filepath: Path) -> dict:
+    """Load a YAML config file with pseudo-comment key filtering.
+
+    Returns an empty dict if the file is missing.  Keys whose string
+    representation starts with ``#`` are treated as user errors (they
+    should have been YAML comments, not quoted keys) and are stripped
+    with a warning.
+
+    Args:
+        filepath: Path to the YAML file.
+
+    Returns:
+        Parsed config dict (empty if file missing or unparseable).
+    """
+    if not filepath.exists():
+        return {}
+
+    with open(filepath, "r", encoding="utf-8") as f:
+        raw = yaml.safe_load(f) or {}
+
+    if not isinstance(raw, dict):
+        return {}
+
+    # Detect and strip pseudo-comment keys — keys that start with '#'
+    pseudo_keys = [k for k in raw if str(k).startswith("#")]
+    if pseudo_keys:
+        logger.warning(
+            "Pseudo-comment keys found in %s — these will be stripped. "
+            "Did you mean to use YAML comments (# key) instead of quoted "
+            "keys ('# key': value)?  Offending keys: %s",
+            filepath.name, [str(k)[:40] for k in pseudo_keys],
+        )
+        raw = {k: v for k, v in raw.items() if not str(k).startswith("#")}
+
+    return raw
 
 
 def load_train_config(stage: str) -> dict:
@@ -504,7 +533,7 @@ def load_train_config(stage: str) -> dict:
         FileNotFoundError: If the YAML file doesn't exist.
     """
     path = _CONFIG_DIR / "train" / f"{stage}.yaml"
-    config = _load_yaml(path)
+    config = _safe_load_yaml(path)
     if not config:
         raise FileNotFoundError(
             f"Training config not found: {path}\n"
@@ -540,7 +569,7 @@ def load_pretrain_config(stage_name: str) -> dict:
         FileNotFoundError: If the YAML file doesn't exist.
     """
     path = _CONFIG_DIR / "train" / "pretrain" / f"{stage_name}.yaml"
-    config = _load_yaml(path)
+    config = _safe_load_yaml(path)
     if not config:
         raise FileNotFoundError(
             f"Pretrain config not found: {path}\n"
