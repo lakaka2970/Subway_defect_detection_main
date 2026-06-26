@@ -22,17 +22,27 @@ Usage:
 """
 
 import argparse
+import multiprocessing
 import os
 import random
 import shutil
-from concurrent.futures import ProcessPoolExecutor, as_completed
+from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Tuple
 
 import cv2
 from tqdm import tqdm
 
-# Import scene augmentations — try package import first (needed for multiprocessing)
+# Force "spawn" on Linux — "fork" deadlocks when OpenCV is built with CUDA
+# (common on AutoDL / cloud GPU instances).  Must happen BEFORE any CUDA-
+# adjacent library is imported.
+if hasattr(multiprocessing, "set_start_method"):
+    try:
+        multiprocessing.set_start_method("spawn", force=True)
+    except RuntimeError:
+        pass  # already set by another component
+
+# Import scene augmentations — try package import first
 try:
     from subway_defect.augmentations.scene import (
         motion_blur,
@@ -52,6 +62,10 @@ except ModuleNotFoundError:
     motion_blur = _scene.motion_blur
     weather_augment = _scene.weather_augment
     _USE_PACKAGE_IMPORT = False
+
+# Cap workers to avoid overwhelming cloud instances (even spawn mode can
+# saturate I/O / memory with too many parallel cv2.imread/cv2.imwrite).
+_MAX_WORKERS = min(os.cpu_count() or 4, 8)
 
 SEED = 42
 N_AUGS_PER_IMAGE = 3
@@ -141,8 +155,6 @@ def _process_one_image(
 
 
 def main() -> None:
-    cpu_count = os.cpu_count() or 4
-
     parser = argparse.ArgumentParser(description="Offline scene augmentations (parallel)")
     parser.add_argument(
         "--train_images", default="data/Defect_dataset/images/train",
@@ -153,10 +165,17 @@ def main() -> None:
     parser.add_argument("--n_augs", type=int, default=N_AUGS_PER_IMAGE)
     parser.add_argument("--seed", type=int, default=SEED)
     parser.add_argument(
-        "--workers", type=int, default=cpu_count,
-        help=f"Number of worker processes (default: {cpu_count})",
+        "--workers", type=int, default=_MAX_WORKERS,
+        help=f"Number of worker processes (default: {_MAX_WORKERS}, max: {_MAX_WORKERS})",
+    )
+    parser.add_argument(
+        "--no-parallel", action="store_true",
+        help="Force sequential mode (useful for debugging / resource-constrained instances)",
     )
     args = parser.parse_args()
+
+    # Clamp workers to safe range
+    workers = min(args.workers, _MAX_WORKERS)
 
     random.seed(args.seed)
 
@@ -175,7 +194,7 @@ def main() -> None:
           f"(out of {len(image_paths)} total in train/)")
     print(f"         Generating {args.n_augs} variants per image "
           f"(~{total_tasks} total)")
-    print(f"         Workers: {args.workers} (CPU cores)")
+    print(f"         Workers: {workers} (CPU cores)")
 
     # Build task list — each worker gets a unique per-image seed for reproducibility
     tasks = [
@@ -184,10 +203,14 @@ def main() -> None:
     ]
 
     generated = 0
+    use_parallel = _USE_PACKAGE_IMPORT and workers > 1 and not args.no_parallel
 
-    if _USE_PACKAGE_IMPORT and args.workers > 1:
-        # ── Parallel mode (Linux: fork, or Windows with installed package) ──
-        with ProcessPoolExecutor(max_workers=args.workers) as executor:
+    if use_parallel:
+        # ── spawn-safe parallel mode ──────────────────────────────────
+        # Uses ProcessPoolExecutor with "spawn" start method to avoid the
+        # fork+CUDA deadlock that occurs on AutoDL / cloud GPU instances.
+        print("         [parallel mode — spawn start method]")
+        with ProcessPoolExecutor(max_workers=workers) as executor:
             futures = {executor.submit(_process_one_image, task): task for task in tasks}
             with tqdm(total=len(originals), desc="Scene augmentations", unit="img") as pbar:
                 for future in as_completed(futures):
@@ -198,11 +221,15 @@ def main() -> None:
                         print(f"  WARNING: {img_path.name} failed: {e}")
                     pbar.update(1)
     else:
-        # ── Sequential fallback (Windows dev, or single worker) ──
+        # ── Sequential fallback ───────────────────────────────────────
         if not _USE_PACKAGE_IMPORT:
             print("         [sequential mode] Run 'pip install -e .' for parallel mode")
+        elif args.no_parallel:
+            print("         [sequential mode] --no-parallel flag set")
         for task in tqdm(tasks, desc="Scene augmentations", unit="img"):
             generated += _process_one_image(task)
+
+    print(f"         Generated {generated} augmented samples.")
 
     print(f"         Generated {generated} augmented samples.")
 
