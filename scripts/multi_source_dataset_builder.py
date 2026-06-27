@@ -326,35 +326,42 @@ DATASET_SPECS: Dict[str, DatasetSpec] = {
         name="RSDDs (Rail Surface Defect Dataset)",
         autodl_pub_globs=["RSDDs*", "rsdds*", "RSDD*", "rail*"],
         download_urls=[
-            "https://github.com/neu-rail-rsdds/rail_surface_anomaly_detection",
+            "https://pan.baidu.com/s/1z62NfRTAROVYSARk41Gz-A?pwd=u7zi",  # Baidu Pan (primary)
+            "https://ieee-dataport.org/documents/rsdds-rail-surface-defect-dataset",  # DOI:10.21227/qtv6-n081
         ],
-        download_method="github",
-        format_desc="Binary mask PNG → bbox → YOLO (generic_defect). Type-I 160×1000, Type-II 55×1250.",
+        download_method="manual",  # Baidu Pan requires manual download + extraction
+        format_desc="Binary mask PNG → bbox → YOLO (generic_defect). "
+                     "Type-I 160×1000, Type-II 55×1250, padded to square.",
         num_classes=1,
         class_names=["rail_defect"],
         priority=2,
         enabled=True,
-        notes="195 images (extended ~1,400), rail surface cracks/pores/wear. "
-               "Highly domain-relevant: metal surface anomalies under harsh lighting. "
-               "Non-square resolution — converter will pad to square. "
-               "Extended version via GitHub releases. License: academic use.",
+        notes="195 images (67 Type-I + 128 Type-II), rail surface cracks/pores/wear. "
+               "Download from Baidu Pan (pwd: u7zi) or IEEE DataPort. "
+               "Expected structure: data{1,2}/{train,test}/images/ + masks/. "
+               "Images padded to square for YOLO training. "
+               "Original: http://icn.bjtu.edu.cn/Visint/resources/RSDDs.aspx",
     ),
     "kolektor_sdd2": DatasetSpec(
         key="kolektor_sdd2",
         name="KolektorSDD2",
         autodl_pub_globs=["Kolektor*", "kolektor*", "KSDD2*", "ksdd2*"],
         download_urls=[
-            "https://www.vicos.si/resources/kolektorsdd2/",
+            "https://huggingface.co/datasets/sizhkhy/kolektor_sdd2",  # HuggingFace mirror
+            "https://www.vicos.si/resources/kolektorsdd2/",           # Official (registration)
+            "https://beta.hyper.ai/datasets/21545",                   # hyper.ai mirror
         ],
-        download_method="direct",
-        format_desc="Segmentation mask → bbox → YOLO (generic_defect)",
+        download_method="manual",  # Requires registration or manual download from HuggingFace
+        format_desc="Segmentation mask _GT.png → bbox → YOLO (generic_defect). "
+                     "Flat train/test dirs, ~230×630 px, padded to square.",
         num_classes=1,
         class_names=["defect"],
         priority=2,
-        enabled=True,  # 2026-06-27: 启用 — 金属表面划痕/斑点与接触网缺陷高度相关
+        enabled=True,
         notes="356 defective + 2,979 defect-free images, ~230×630 px. "
-               "Official: vicos.si. Hyper.ai torrent mirror available. "
-               "Good for defect/normal discrimination; small targets. "
+               "Masks use _GT.png suffix alongside original images. "
+               "Expected structure: {train,test}/{id}.png + {id}_GT.png. "
+               "Images padded to square for YOLO training. "
                "License: CC BY-NC-SA 4.0.",
     ),
 }
@@ -1453,6 +1460,297 @@ def convert_mask_dataset(
     return True
 
 
+def convert_rsdds(
+    spec: DatasetSpec, src_dir: Path, output_dir: Path, val_ratio: float = 0.2,
+) -> bool:
+    """Convert RSDDs (Rail Surface Defect Dataset) to YOLO format.
+
+    Expected structure::
+
+        src_dir/
+        ├── data1/                      # Type-I (express rail, 160×1000 px)
+        │   ├── train/
+        │   │   ├── images/*.jpg        # defect images
+        │   │   └── masks/*.png         # binary masks (same stem)
+        │   └── test/
+        │       ├── images/*.jpg
+        │       └── masks/*.png
+        └── data2/                      # Type-II (heavy rail, 55×1250 px)
+            ├── train/
+            │   ├── images/*.jpg
+            │   └── masks/*.png
+            └── test/
+                ├── images/*.jpg
+                └── masks/*.png
+
+    Notes:
+        - Images are non-square (160×1000 or 55×1250).  They are padded to
+          square with grey (114,114,114) before writing.
+        - Masks are binary PNGs (white=defect, black=background).
+        - The original train/test split is preserved within each subset
+          (data1/data2), then all images are pooled and re-split at the dataset
+          level by subset to prevent leakage.
+    """
+    key = spec.key
+
+    if cv2 is None:
+        print(fail(f"[{key}] opencv-python required for RSDDs conversion"))
+        return False
+
+    # Find data1 / data2 subdirectories
+    data_dirs = sorted([
+        d for d in src_dir.iterdir()
+        if d.is_dir() and d.name.startswith("data") and not d.name.startswith(".")
+    ])
+    if not data_dirs:
+        print(fail(f"[{key}] No data1/data2/... directories found under {src_dir}"))
+        return False
+
+    print(info(f"[{key}] Found {len(data_dirs)} subset(s): {[d.name for d in data_dirs]}"))
+
+    # Collect (image, mask) pairs from all subsets
+    # Group by subset (data1/data2) for split to prevent leakage
+    subset_pairs: Dict[str, List[Tuple[Path, Optional[Path]]]] = defaultdict(list)
+    total_pairs = 0
+
+    for data_dir in data_dirs:
+        subset_name = data_dir.name
+        for split_tag in ("train", "test"):
+            img_dir = data_dir / split_tag / "images"
+            mask_dir = data_dir / split_tag / "masks"
+
+            if not img_dir.is_dir():
+                continue
+
+            img_exts = ("*.jpg", "*.jpeg", "*.png", "*.bmp", "*.JPG", "*.PNG")
+            for ext in img_exts:
+                for img_path in sorted(img_dir.glob(ext)):
+                    # Find matching mask
+                    mask_path = mask_dir / f"{img_path.stem}.png"
+                    if not mask_path.exists():
+                        # Try alternative extensions
+                        for m_ext in (".jpg", ".bmp"):
+                            alt = mask_dir / f"{img_path.stem}{m_ext}"
+                            if alt.exists():
+                                mask_path = alt
+                                break
+                    subset_pairs[subset_name].append(
+                        (img_path, mask_path if mask_path.exists() else None)
+                    )
+                    total_pairs += 1
+
+    if total_pairs == 0:
+        print(fail(f"[{key}] No defect image/mask pairs found"))
+        return False
+
+    print(info(f"[{key}] Found {total_pairs} defect image/mask pairs "
+               f"across {len(subset_pairs)} subset(s)"))
+
+    # Split by subset (data1/data2) to prevent leakage
+    subset_names = sorted(subset_pairs.keys())
+    random.seed(SEED)
+    random.shuffle(subset_names)
+    split_idx = max(1, int(len(subset_names) * (1 - val_ratio)))
+    train_subsets = set(subset_names[:split_idx])
+    val_subsets = set(subset_names[split_idx:])
+
+    for split, sub_set in (("train", train_subsets), ("val", val_subsets)):
+        out_img_dir = output_dir / "images" / split
+        out_lbl_dir = output_dir / "labels" / split
+        out_img_dir.mkdir(parents=True, exist_ok=True)
+        out_lbl_dir.mkdir(parents=True, exist_ok=True)
+
+        img_count = 0
+        box_count = 0
+
+        for sub_name in sorted(sub_set):
+            for img_path, mask_path in subset_pairs[sub_name]:
+                im = cv2.imread(str(img_path))
+                if im is None:
+                    continue
+                img_h, img_w = im.shape[:2]
+
+                # Pad to square (RSDDs images are non-square: 160×1000 or 55×1250)
+                max_side = max(img_h, img_w)
+                pad_bottom = max_side - img_h
+                pad_right = max_side - img_w
+                im_padded = cv2.copyMakeBorder(
+                    im, 0, pad_bottom, 0, pad_right,
+                    cv2.BORDER_CONSTANT, value=(114, 114, 114),
+                )
+
+                # Safe filename: subset_split_stem
+                safe_name = f"{sub_name}_{img_path.parent.parent.name}_{img_path.stem}"
+                dst_img = out_img_dir / f"{safe_name}.jpg"
+                if not dst_img.exists():
+                    cv2.imwrite(str(dst_img), im_padded,
+                                [cv2.IMWRITE_JPEG_QUALITY, 95])
+                img_count += 1
+
+                # Convert mask to bboxes (relative to padded image)
+                lines: List[str] = []
+                if mask_path is not None and mask_path.exists():
+                    mask = cv2.imread(str(mask_path), cv2.IMREAD_GRAYSCALE)
+                    if mask is not None:
+                        # Pad mask to match padded image
+                        mask_padded = cv2.copyMakeBorder(
+                            mask, 0, pad_bottom, 0, pad_right,
+                            cv2.BORDER_CONSTANT, value=0,
+                        )
+                        bboxes = _mask_to_bboxes_from_array(mask_padded)
+                        lines = _bboxes_to_yolo_lines(
+                            bboxes, max_side, max_side, cls_id=0,
+                        )
+
+                dst_lbl = out_lbl_dir / f"{safe_name}.txt"
+                dst_lbl.write_text(
+                    "\n".join(lines) + "\n" if lines else "\n",
+                    encoding="utf-8",
+                )
+                box_count += len(lines)
+
+        print(ok(f"[{key}] {split}: {img_count} images, {box_count} boxes"))
+
+    return True
+
+
+def _mask_to_bboxes_from_array(mask: "np.ndarray") -> List[Tuple[int, int, int, int]]:
+    """Like _mask_to_bboxes but takes a numpy array instead of a file path."""
+    import numpy as np
+    if mask is None or mask.max() == 0:
+        return []
+    binary = (mask > 127).astype(np.uint8) * 255
+    num_labels, _, stats, _ = cv2.connectedComponentsWithStats(binary, connectivity=8)
+    bboxes: List[Tuple[int, int, int, int]] = []
+    for i in range(1, num_labels):
+        x, y, w, h, area = stats[i]
+        if area < 4:  # skip single-pixel noise
+            continue
+        bboxes.append((int(x), int(y), int(w), int(h)))
+    return bboxes
+
+
+def convert_kolektor_sdd2(
+    spec: DatasetSpec, src_dir: Path, output_dir: Path, val_ratio: float = 0.2,
+) -> bool:
+    """Convert KolektorSDD2 to YOLO format.
+
+    Expected structure::
+
+        src_dir/
+        ├── train/
+        │   ├── 10000.png              # defect / defect-free image
+        │   ├── 10000_GT.png           # mask (only for defect images, _GT suffix)
+        │   ├── 10001.png
+        │   └── ...
+        └── test/
+            ├── {id}.png
+            ├── {id}_GT.png
+            └── ...
+
+    Notes:
+        - 356 defective + 2,979 defect-free images (~230×630 px).
+        - Defect-free images have NO corresponding _GT mask.
+        - Images are non-square; padded to square with grey (114,114,114).
+        - The original train/test split is preserved.
+    """
+    key = spec.key
+
+    if cv2 is None:
+        print(fail(f"[{key}] opencv-python required for KolektorSDD2 conversion"))
+        return False
+
+    # Collect (image, mask) pairs
+    pairs: List[Tuple[Path, Optional[Path]]] = []
+
+    for split_tag in ("train", "test"):
+        split_dir = src_dir / split_tag
+        if not split_dir.is_dir():
+            print(warn(f"[{key}] {split_tag}/ directory not found under {src_dir}"))
+            continue
+
+        for img_file in sorted(split_dir.glob("*.png")):
+            if img_file.name.endswith("_GT.png"):
+                continue  # skip mask files
+
+            # Look for mask: {stem}_GT.png
+            mask_file = split_dir / f"{img_file.stem}_GT.png"
+            pairs.append((img_file, mask_file if mask_file.exists() else None))
+
+    if not pairs:
+        print(fail(f"[{key}] No images found under {src_dir}"))
+        return False
+
+    n_with_mask = sum(1 for _, m in pairs if m is not None)
+    n_without = len(pairs) - n_with_mask
+    print(info(f"[{key}] Found {len(pairs)} images "
+               f"({n_with_mask} defective, {n_without} defect-free)"))
+
+    # Split: shuffle all images, keep val_ratio for validation
+    random.seed(SEED)
+    shuffled = sorted(pairs, key=lambda x: x[0].stem)
+    random.shuffle(shuffled)
+    split_idx = max(1, int(len(shuffled) * (1 - val_ratio)))
+    train_pairs = shuffled[:split_idx]
+    val_pairs = shuffled[split_idx:]
+
+    for split, pair_list in (("train", train_pairs), ("val", val_pairs)):
+        out_img_dir = output_dir / "images" / split
+        out_lbl_dir = output_dir / "labels" / split
+        out_img_dir.mkdir(parents=True, exist_ok=True)
+        out_lbl_dir.mkdir(parents=True, exist_ok=True)
+
+        img_count = 0
+        box_count = 0
+
+        for img_path, mask_path in pair_list:
+            im = cv2.imread(str(img_path))
+            if im is None:
+                continue
+            img_h, img_w = im.shape[:2]
+
+            # Pad to square (KolektorSDD2 images are ~230×630 px)
+            max_side = max(img_h, img_w)
+            pad_bottom = max_side - img_h
+            pad_right = max_side - img_w
+            im_padded = cv2.copyMakeBorder(
+                im, 0, pad_bottom, 0, pad_right,
+                cv2.BORDER_CONSTANT, value=(114, 114, 114),
+            )
+
+            safe_name = f"{img_path.parent.name}_{img_path.stem}"
+            dst_img = out_img_dir / f"{safe_name}.jpg"
+            if not dst_img.exists():
+                cv2.imwrite(str(dst_img), im_padded,
+                            [cv2.IMWRITE_JPEG_QUALITY, 95])
+            img_count += 1
+
+            # Convert mask to bboxes
+            lines: List[str] = []
+            if mask_path is not None and mask_path.exists():
+                mask = cv2.imread(str(mask_path), cv2.IMREAD_GRAYSCALE)
+                if mask is not None:
+                    mask_padded = cv2.copyMakeBorder(
+                        mask, 0, pad_bottom, 0, pad_right,
+                        cv2.BORDER_CONSTANT, value=0,
+                    )
+                    bboxes = _mask_to_bboxes_from_array(mask_padded)
+                    lines = _bboxes_to_yolo_lines(
+                        bboxes, max_side, max_side, cls_id=0,
+                    )
+
+            dst_lbl = out_lbl_dir / f"{safe_name}.txt"
+            dst_lbl.write_text(
+                "\n".join(lines) + "\n" if lines else "\n",
+                encoding="utf-8",
+            )
+            box_count += len(lines)
+
+        print(ok(f"[{key}] {split}: {img_count} images, {box_count} boxes"))
+
+    return True
+
+
 def convert_roboflow_dataset(
     spec: DatasetSpec, src_dir: Path, output_dir: Path,
 ) -> bool:
@@ -1604,6 +1902,19 @@ class DatasetBuilder:
                 src = self._download_github(key, spec)
                 if src:
                     all_sources[key] = src
+            elif spec.download_method == "manual":
+                # Manual download — check if user has placed data in _downloads/
+                dest_dir = self.download_dir / key
+                if dest_dir.exists() and any(dest_dir.iterdir()):
+                    print(ok(f"[{key}] Found manually downloaded data at {dest_dir}"))
+                    all_sources[key] = dest_dir
+                else:
+                    print(info(
+                        f"[{key}] {spec.name} requires MANUAL download.\n"
+                        f"       Download from: {spec.download_urls[0]}\n"
+                        f"       Extract to:    {dest_dir}\n"
+                        f"       Expected structure: {spec.format_desc}"
+                    ))
             else:
                 print(warn(f"[{key}] Unknown download method: {spec.download_method}"))
 
@@ -1782,8 +2093,12 @@ class DatasetBuilder:
                 success = convert_deeppcb(src, out, self.val_ratio)
             elif key == "tt100k":
                 success = convert_tt100k(src, out, self.val_ratio)
-            elif key in ("mvtec_ad", "visa", "kolektor_sdd2", "rsdds"):
+            elif key in ("mvtec_ad", "visa"):
                 success = convert_mask_dataset(spec, src, out, self.val_ratio)
+            elif key == "rsdds":
+                success = convert_rsdds(spec, src, out, self.val_ratio)
+            elif key == "kolektor_sdd2":
+                success = convert_kolektor_sdd2(spec, src, out, self.val_ratio)
             elif key == "insulator_defect":
                 success = convert_roboflow_dataset(spec, src, out)
             else:
