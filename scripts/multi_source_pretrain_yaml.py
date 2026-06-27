@@ -23,7 +23,7 @@ Output files (written to config/train/pretrain/)::
 
     config/train/pretrain/
     ├── stage_p2_tiny_pretrain.yaml     # (optional) TT100K P2 head warmup
-    ├── stage1_public_pretrain.yaml     # DeepPCB + NEU-DET + GC10-DET
+    ├── stage1_public_pretrain.yaml     # [LEGACY] KolektorSDD2 + RSDDs + NEU-DET + GC10-DET
     ├── stage2_domain_adapt.yaml        # Public → custom contact-net adaptation
     ├── stage3_main_training.yaml       # Full training on custom crops
     ├── stage4_short_finetune.yaml      # Short fine-tune, minimal augmentation
@@ -129,7 +129,7 @@ def generate_stage_p2_tiny_pretrain(root: Path, dry_run: bool = False) -> Option
 Stage P2 (optional): TT100K P2 Small-Object Head Warmup
 =======================================================
 Target: Train the newly added P2 detection branch on tiny objects first.
-Dataset: TT100K (optional DeepPCB as substitute).
+Dataset: TT100K (optional, only for P2 four-scale models).
 Model: YOLO11s-P2-EMA-SimAM (only for P2 four-scale models).
 Input: 1024.
 Training: 80 epochs.
@@ -186,7 +186,7 @@ def generate_stage1_public_pretrain(root: Path, dry_run: bool = False) -> Option
     train_paths: List[str] = []
     val_paths: List[str] = []
 
-    priority_order = ["deeppcb", "gc10_det", "neu_det", "insulator_defect"]
+    priority_order = ["kolektor_sdd2", "rsdds", "gc10_det", "neu_det"]
     for key in priority_order:
         ds_dir = public_dir / key
         train_p = ds_dir / "images" / "train"
@@ -205,7 +205,7 @@ Stage 1 (Legacy): Public Industrial Defect Pretraining
 ======================================================
 Target: Let backbone/neck learn industrial anomaly textures (single stage).
 Init: COCO yolo11m.pt.
-Datasets: DeepPCB + NEU-DET + GC10-DET + optional Insulator.
+Datasets: KolektorSDD2 + RSDDs + NEU-DET + GC10-DET.
 Classes: 1 (generic_defect).
 
 Note: Prefer Stage 1A + 1B for better weight inheritance to Stage 2.
@@ -291,7 +291,7 @@ def generate_stage1a_public_head(root: Path, dry_run: bool = False) -> Optional[
     train_paths: List[str] = []
     val_paths: List[str] = []
 
-    priority_order = ["deeppcb", "gc10_det", "neu_det", "insulator_defect"]
+    priority_order = ["kolektor_sdd2", "rsdds", "gc10_det", "neu_det"]
     for key in priority_order:
         ds_dir = public_dir / key
         train_p = ds_dir / "images" / "train"
@@ -310,7 +310,7 @@ Stage 1A: Public Defect Neck/Head Warmup
 ========================================
 Target: Train neck + attention + detection head on generic_defect (1 class).
 Init: COCO yolo11m.pt (backbone frozen deep — layers 0-10).
-Datasets: DeepPCB + NEU-DET + GC10-DET.
+Datasets: KolektorSDD2 + RSDDs + NEU-DET + GC10-DET.
 Classes: 1 (generic_defect).
 
 Strategy:
@@ -413,7 +413,7 @@ def generate_stage1b_public_backbone(root: Path, dry_run: bool = False) -> Optio
     train_paths: List[str] = []
     val_paths: List[str] = []
 
-    priority_order = ["deeppcb", "gc10_det", "neu_det", "insulator_defect"]
+    priority_order = ["kolektor_sdd2", "rsdds", "gc10_det", "neu_det"]
     for key in priority_order:
         ds_dir = public_dir / key
         train_p = ds_dir / "images" / "train"
@@ -432,7 +432,7 @@ Stage 1B: Public Defect Backbone Adaptation
 ===========================================
 Target: Adapt backbone deep layers to industrial anomaly textures.
 Init: Stage 1A best.pt (weights/stage1a_public_head.pt).
-Datasets: DeepPCB + NEU-DET + GC10-DET.
+Datasets: KolektorSDD2 + RSDDs + NEU-DET + GC10-DET.
 Classes: 1 (generic_defect).
 
 Strategy:
@@ -544,9 +544,9 @@ def generate_stage2_domain_adapt(root: Path, dry_run: bool = False) -> Optional[
 Stage 2: Custom Contact-Net Domain Adaptation
 =============================================
 Target: Transfer from public defect domain to real contact-net 7 class defects.
-Init: stage1_public_pretrain.pt.
+Init: Stage 1B best.pt (weights/stage1b_public_backbone.pt).
 Data: subway_crops (1024 native resolution ROI crops).
-Classes: 7 contact-net defect classes.
+Classes: 7 contact-net defect classes (nc=1→7, Detect cls layers reinitialized).
 
 Strategy: Freeze backbone first 60% layers, train neck + P3/P4/P5 + attention.
 Acceptance: mAP50 > 0.35, mAP50-95 > 0.25, all per-class AP > 0.
@@ -645,7 +645,7 @@ Output: weights/stage3_main.pt.
         "patience": 28,
         "mosaic": 0.15,
         "mixup": 0.0,
-        "copy_paste": 0.0,
+        "copy_paste": 0.05,         # v2: 缺陷感知 Copy-Paste (离线生成, 小目标专用)
         "erasing": 0.0,
         "hsv_h": 0.015,
         "hsv_s": 0.6,

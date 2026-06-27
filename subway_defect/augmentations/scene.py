@@ -1,9 +1,15 @@
 """
 Scene-specific augmentations for subway catenary imagery.
 
-Simulates: tunnel lighting (dark + yellow spotlights), outdoor sunlight
-(high contrast + shadows), motion blur (vehicle vibration), and weather
-(fog, rain). All functions accept and return np.ndarray (H, W, 3) uint8 BGR.
+Simulates six lighting/environmental conditions:
+  - tunnelize:        dark tunnel lighting (yellow sodium lamps + low exposure)
+  - sunlitize:         bright outdoor sunlight (high contrast + shadows)
+  - motion_blur:       directional vehicle-motion blur (long-exposure smear)
+  - weather_augment:   rain streaks + fog overlay
+  - vibration_blur:    high-frequency micro-vibration (Gaussian blur + bidirectional pixel shift)
+  - white_balance_shift: camera white-balance / colour-temperature drift (4 lighting modes)
+
+All functions accept and return np.ndarray (H, W, 3) uint8 BGR.
 """
 
 import cv2
@@ -148,4 +154,92 @@ def weather_augment(img: np.ndarray) -> np.ndarray:
             dy = int(length * np.sin(np.radians(angle)))
             cv2.line(img, (x, y), (x + dx, y + dy), (200, 210, 220),
                      thickness=1, lineType=cv2.LINE_AA)
+    return img
+
+
+def vibration_blur(img: np.ndarray) -> np.ndarray:
+    """Simulate high-frequency micro-vibration from passing trains.
+
+    Unlike ``motion_blur`` (directional, long-distance smear), this produces
+    localised high-frequency jitter by applying Gaussian blur followed by a
+    subtle bidirectional pixel shift — the visual signature of rail/train
+    vibration transmitted through the catenary structure.
+
+    Args:
+        img: Input BGR image (H, W, 3) uint8.
+
+    Returns:
+        Vibration-blurred image, same shape and dtype.
+    """
+    img = img.copy()
+    h, w = img.shape[:2]
+
+    # Gaussian blur (high-frequency vibration)
+    sigma = np.random.uniform(1.0, 2.5)
+    kernel_size = np.random.choice([3, 5, 7])
+    img = cv2.GaussianBlur(img, (kernel_size, kernel_size), sigma)
+
+    # Subtle bidirectional pixel shift (simulate structural resonance)
+    shift_x = np.random.randint(-2, 3)
+    shift_y = np.random.randint(-2, 3)
+    if shift_x != 0 or shift_y != 0:
+        M = np.float32([[1, 0, shift_x], [0, 1, shift_y]])
+        img = cv2.warpAffine(img, M, (w, h), borderMode=cv2.BORDER_REPLICATE)
+
+    return img
+
+
+def white_balance_shift(img: np.ndarray) -> np.ndarray:
+    """Simulate different tunnel lighting colour temperatures.
+
+    Applies independent per-channel gain to mimic the transition from warm
+    sodium-vapour lamps (yellow/orange cast) to cool LED panels (blue cast)
+    or fluorescent strips (green cast). Also models partial AWB failure
+    where one channel drifts to an extreme.
+
+    Args:
+        img: Input BGR image (H, W, 3) uint8.
+
+    Returns:
+        White-balance-shifted image, same shape and dtype.
+    """
+    img = img.copy().astype(np.float32)
+
+    # BGR channel gains
+    mode = np.random.choice(["warm", "cool", "fluorescent", "awb_fail"],
+                            p=[0.40, 0.30, 0.20, 0.10])
+
+    if mode == "warm":
+        # Sodium-vapour: boost red, suppress blue (BGR: B↓, G→, R↑)
+        gains = np.array([
+            np.random.uniform(0.65, 0.90),  # B: suppressed
+            np.random.uniform(0.90, 1.05),  # G: neutral
+            np.random.uniform(1.10, 1.40),  # R: boosted
+        ], dtype=np.float32).reshape(1, 1, 3)
+    elif mode == "cool":
+        # LED: boost blue, suppress red (BGR: B↑, G→, R↓)
+        gains = np.array([
+            np.random.uniform(1.10, 1.45),  # B: boosted
+            np.random.uniform(0.90, 1.05),  # G: neutral
+            np.random.uniform(0.65, 0.90),  # R: suppressed
+        ], dtype=np.float32).reshape(1, 1, 3)
+    elif mode == "fluorescent":
+        # Green shift: boost green (BGR: B→, G↑, R→)
+        gains = np.array([
+            np.random.uniform(0.85, 1.05),  # B: near neutral
+            np.random.uniform(1.10, 1.35),  # G: boosted
+            np.random.uniform(0.85, 1.05),  # R: near neutral
+        ], dtype=np.float32).reshape(1, 1, 3)
+    else:  # awb_fail
+        # Single-channel extreme drift
+        channel = np.random.randint(0, 3)
+        gains = np.ones(3, dtype=np.float32)
+        gains[channel] = np.random.uniform(1.30, 1.60)
+        gains = gains.reshape(1, 1, 3)
+
+    # Apply gains and add subtle colour noise
+    img = img * gains
+    noise = np.random.randn(*img.shape).astype(np.float32) * np.random.uniform(0, 3)
+    img = (img + noise).clip(0, 255).astype(np.uint8)
+
     return img

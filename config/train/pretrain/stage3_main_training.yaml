@@ -32,6 +32,7 @@ batch: 12
 optimizer: AdamW
 lr0: 0.0005
 lrf: 0.02
+momentum: 0.937
 warmup_epochs: 3
 warmup_momentum: 0.5
 warmup_bias_lr: 0.0005
@@ -43,7 +44,7 @@ save_period: 5
 # ── 数据增强 (弱增强, 保护小目标) ──
 mosaic: 0.15
 mixup: 0.0
-copy_paste: 0.0         # 小目标场景禁用
+copy_paste: 0.05         # v2: 缺陷感知 Copy-Paste (离线生成, 小目标专用)
 erasing: 0.0            # 保护 8-10px 小目标不被随机擦除
 hsv_h: 0.015
 hsv_s: 0.6

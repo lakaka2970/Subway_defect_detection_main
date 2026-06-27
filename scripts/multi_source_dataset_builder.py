@@ -204,8 +204,8 @@ DATASET_SPECS: Dict[str, DatasetSpec] = {
         num_classes=6,
         class_names=["open", "short", "mousebite", "spur", "pin_hole", "spurious_copper"],
         priority=1,
-        enabled=True,
-        notes="⭐ HIGHEST VALUE: PCB regular-structure opens/shorts/missing ≈ bolt/pin defects. "
+        enabled=False,  # 2026-06-27: 放弃 DeepPCB — PCB 电路板缺陷与金属件表面缺陷视觉特征差异大
+        notes="[DEPRECATED] PCB regular-structure defects. Replaced by KolektorSDD2+RSDDs. "
                "1,500 pairs (1,000 train + 500 test), 640×640 px. "
                "Verified: GitHub repo active, last confirmed 2025.",
     ),
@@ -321,6 +321,24 @@ DATASET_SPECS: Dict[str, DatasetSpec] = {
                "AWS Open Data — no account needed: "
                "aws s3 cp --no-sign-request s3://amazon-visual-anomaly/VisA_20220922.tar ./",
     ),
+    "rsdds": DatasetSpec(
+        key="rsdds",
+        name="RSDDs (Rail Surface Defect Dataset)",
+        autodl_pub_globs=["RSDDs*", "rsdds*", "RSDD*", "rail*"],
+        download_urls=[
+            "https://github.com/neu-rail-rsdds/rail_surface_anomaly_detection",
+        ],
+        download_method="github",
+        format_desc="Binary mask PNG → bbox → YOLO (generic_defect). Type-I 160×1000, Type-II 55×1250.",
+        num_classes=1,
+        class_names=["rail_defect"],
+        priority=2,
+        enabled=True,
+        notes="195 images (extended ~1,400), rail surface cracks/pores/wear. "
+               "Highly domain-relevant: metal surface anomalies under harsh lighting. "
+               "Non-square resolution — converter will pad to square. "
+               "Extended version via GitHub releases. License: academic use.",
+    ),
     "kolektor_sdd2": DatasetSpec(
         key="kolektor_sdd2",
         name="KolektorSDD2",
@@ -332,8 +350,8 @@ DATASET_SPECS: Dict[str, DatasetSpec] = {
         format_desc="Segmentation mask → bbox → YOLO (generic_defect)",
         num_classes=1,
         class_names=["defect"],
-        priority=3,
-        enabled=False,
+        priority=2,
+        enabled=True,  # 2026-06-27: 启用 — 金属表面划痕/斑点与接触网缺陷高度相关
         notes="356 defective + 2,979 defect-free images, ~230×630 px. "
                "Official: vicos.si. Hyper.ai torrent mirror available. "
                "Good for defect/normal discrimination; small targets. "
@@ -1764,7 +1782,7 @@ class DatasetBuilder:
                 success = convert_deeppcb(src, out, self.val_ratio)
             elif key == "tt100k":
                 success = convert_tt100k(src, out, self.val_ratio)
-            elif key in ("mvtec_ad", "visa", "kolektor_sdd2"):
+            elif key in ("mvtec_ad", "visa", "kolektor_sdd2", "rsdds"):
                 success = convert_mask_dataset(spec, src, out, self.val_ratio)
             elif key == "insulator_defect":
                 success = convert_roboflow_dataset(spec, src, out)
@@ -1936,7 +1954,6 @@ class DatasetBuilder:
             for k, v in found.items():
                 if v:
                     print(f"  {DATASET_SPECS[k].name}: {v}")
-            return {}
             return {}
 
         # Phase 2: Download missing

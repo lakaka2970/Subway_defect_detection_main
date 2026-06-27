@@ -75,11 +75,11 @@ _SCRIPTS_DIR = _PROJECT_ROOT / "scripts"
 # classification layers will be reinitialized (source nc ≠ target nc).
 STAGE_DEFS: Dict[str, dict] = {
     "p2": {
-        "name": "Stage P2 (optional): TT100K P2 Tiny-Object Head Warmup",
+        "name": "Stage P2 [ABLATION ONLY]: TT100K P2 Tiny-Object Head Warmup",
         "yaml": "stage_p2_tiny_pretrain.yaml",
         "output": "weights/stage_p2_tiny_pretrain.pt",
         "epochs": 80,
-        "desc": "P2 head warmup on tiny objects (only for P2 models)",
+        "desc": "[ABLATION ONLY] P2 head warmup — 4-scale model performed WORSE (mAP50 -0.067, Prec -0.067). Use only for controlled experiments.",
         "required": False,
         "pretrained_from": None,       # uses COCO weights
         "nc_mismatch": False,
@@ -151,9 +151,11 @@ _STAGE_ORDER = ["p2", "1a", "1b", "2", "3", "4", "5"]
 
 # ── Model definitions ───────────────────────────────────────────────────────
 _MODEL_FILES = {
+    # === Recommended (three-scale) ===
     "yolo11s-EMA-SimAM": "yolo11s-EMA-SimAM.yaml",
-    "yolo11s-P2-EMA-SimAM": "yolo11s-P2-EMA-SimAM.yaml",
     "yolo11m-EMA-SimAM": "yolo11m-EMA-SimAM.yaml",
+    # === [ABLATION ONLY] P2 four-scale models — see P2 deprecation warning ===
+    "yolo11s-P2-EMA-SimAM": "yolo11s-P2-EMA-SimAM.yaml",
     "yolo11m-P2-SimAM": "yolo11m-P2-SimAM.yaml",
     "yolo11m-P2-EMA-SimAM": "yolo11m-P2-EMA-SimAM.yaml",
 }
@@ -555,7 +557,7 @@ Examples:
   # Recommended: full core pipeline (Stage 1A → 1B → 2 → 3 → 4)
   python scripts/train_pipeline.py --model yolo11m-EMA-SimAM --device 0
 
-  # P2 four-scale model with optional P2 warmup
+  # P2 four-scale model [ABLATION ONLY — NOT recommended as main model]
   python scripts/train_pipeline.py --stages p2 1a 1b 2 3 4 --model yolo11m-P2-EMA-SimAM
 
   # Specific stages
@@ -591,6 +593,11 @@ Examples:
         "--dry-run", action="store_true",
         help="Print plan and pre-flight results without training",
     )
+    parser.add_argument(
+        "--auto-hnm", action="store_true",
+        help="After Stage 5 training, auto-run calibrate_thresholds.py for "
+             "per-class confidence threshold optimization.",
+    )
     args = parser.parse_args()
 
     # Resolve stages (handle --phases deprecation)
@@ -603,6 +610,25 @@ Examples:
         if sid not in STAGE_DEFS:
             print(f"ERROR: Unknown stage '{sid}'. Valid: {sorted(STAGE_DEFS)}")
             sys.exit(1)
+
+    # ── P2 deprioritization warning ──
+    _p2_selected = "p2" in stage_ids or "P2" in args.model
+    if _p2_selected:
+        print()
+        print("  " + "=" * 64)
+        print("  ⚠ P2 DEPRECATION WARNING")
+        print("  " + "=" * 64)
+        print("  P2 four-scale models were tested against three-scale models:")
+        print("    YOLO11m-EMA-SimAM (3-scale):  mAP50=0.497  Precision=0.439")
+        print("    YOLO11m-P2-EMA-SimAM (4-scale): mAP50=0.430  Precision=0.372")
+        print("  → P2 REDUCED mAP50 by 0.067 and Precision by 0.067.")
+        print("  → P2 increased low-quality candidates, amplifying false positives.")
+        print("  → SVHBNM mAP50 dropped from 0.251 → 0.197 (WORSE with P2).")
+        print("  → CBHPM mAP50 dropped from 0.767 → 0.502 (MAJOR regression).")
+        print()
+        print("  RECOMMENDATION: Use three-scale YOLO11m-EMA-SimAM as the main model.")
+        print("  P2 is retained ONLY for controlled ablation experiments.")
+        print("  " + "=" * 64)
 
     # ═════════════════════════════════════════════════════════════════════
     #  PRE-FLIGHT CHECKS
@@ -702,6 +728,45 @@ Examples:
                 )),
             )
             break
+
+    # ═════════════════════════════════════════════════════════════════════
+    #  STAGE 5 POST-STEPS (if Stage 5 completed)
+    # ═════════════════════════════════════════════════════════════════════
+    if "5" in stages_done and not args.dry_run:
+        stage5_output = Path(STAGE_DEFS["5"]["output"])
+        stage4_output = Path(STAGE_DEFS["4"]["output"])
+
+        _run_stage5_calibration = args.auto_hnm
+        if _run_stage5_calibration:
+            print()
+            print("=" * 70)
+            print("  Stage 5 Post-Steps: Per-Class Threshold Calibration")
+            print("=" * 70)
+
+            # ── Calibrate thresholds using Stage 5 model ──────────────
+            if stage5_output.exists():
+                print(f"\n  Running calibrate_thresholds.py with {stage5_output} ...")
+                calib_result = subprocess.run(
+                    [sys.executable, str(_SCRIPTS_DIR / "calibrate_thresholds.py"),
+                     "--model", str(stage5_output),
+                     "--data", "data/subway_crops/subway_crops.yaml",
+                     "--device", args.device],
+                    capture_output=False,
+                    cwd=str(_PROJECT_ROOT),
+                )
+                if calib_result.returncode == 0:
+                    calib_path = Path("data/calibrated_thresholds/thresholds.json")
+                    if calib_path.exists():
+                        print(f"  [OK] Calibration complete: {calib_path}")
+                        # Print recommended thresholds
+                        import json
+                        calib_data = json.loads(calib_path.read_text(encoding="utf-8"))
+                        print(f"\n  Recommended per-class confidence thresholds:")
+                        for cls_name, v in calib_data.items():
+                            print(f"    {cls_name:12s}: {v['recommended_threshold']:.2f}  "
+                                  f"(P={v['precision']:.3f}, R={v['recall']:.3f})")
+                else:
+                    print(f"  [WARN] Calibration script returned non-zero exit code")
 
     # ═════════════════════════════════════════════════════════════════════
     #  SUMMARY

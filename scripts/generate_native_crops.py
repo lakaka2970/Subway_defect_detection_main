@@ -53,7 +53,7 @@ import json
 import os
 import random
 import sys
-from collections import defaultdict
+from collections import Counter, defaultdict
 from pathlib import Path
 from typing import Dict, List, Optional, Set, Tuple
 
@@ -206,6 +206,81 @@ def _normalize_bbox_to_crop(
     return (xc_crop, yc_crop, w_crop, h_crop)
 
 
+def _compute_debiased_offset(
+    img_w: int, img_h: int,
+    bx: int, by: int,
+    crop_size: int,
+    rng: random.Random,
+) -> Tuple[int, int]:
+    """Compute crop center (cx, cy) with position de-biasing.
+
+    Instead of always centering ± small random offset (which teaches the model
+    that defects always appear near the crop center), this function varies the
+    defect's position within the crop systematically:
+
+    - 30% center: defect near crop center (±50-100px jitter)
+    - 30% off-center: defect in one of 4 quadrants (200-400px from center)
+    - 25% near-edge: defect within 100-250px of one crop edge
+    - 15% corner: defect within 200px of two adjacent crop edges
+
+    Returns (cx, cy) constrained to valid crop bounds.
+    """
+    zone = rng.choices(
+        ["center", "off_center", "near_edge", "corner"],
+        weights=[0.30, 0.30, 0.25, 0.15],
+        k=1,
+    )[0]
+
+    half = crop_size // 2
+
+    if zone == "center":
+        # Defect near crop center with mild jitter
+        dx = rng.randint(50, 100) * rng.choice([-1, 1])
+        dy = rng.randint(50, 100) * rng.choice([-1, 1])
+        cx = bx + dx
+        cy = by + dy
+
+    elif zone == "off_center":
+        # Defect in one quadrant of the crop (200-400px from center)
+        qx = rng.choice([-1, 1])
+        qy = rng.choice([-1, 1])
+        dx = rng.randint(200, 400) * qx
+        dy = rng.randint(200, 400) * qy
+        cx = bx + dx
+        cy = by + dy
+
+    elif zone == "near_edge":
+        # Defect near one of the 4 crop edges
+        edge = rng.choice(["top", "bottom", "left", "right"])
+        margin = rng.randint(100, 250)
+        if edge == "top":
+            cx = bx + rng.randint(-150, 150)
+            cy = by + (half - margin)  # defect near top of crop
+        elif edge == "bottom":
+            cx = bx + rng.randint(-150, 150)
+            cy = by - (half - margin)  # defect near bottom of crop
+        elif edge == "left":
+            cx = bx + (half - margin)  # defect near left of crop
+            cy = by + rng.randint(-150, 150)
+        else:  # "right"
+            cx = bx - (half - margin)  # defect near right of crop
+            cy = by + rng.randint(-150, 150)
+
+    else:  # "corner"
+        # Defect near one of the 4 crop corners
+        corner_x = rng.choice([-1, 1])
+        corner_y = rng.choice([-1, 1])
+        margin_x = rng.randint(50, 200)
+        margin_y = rng.randint(50, 200)
+        cx = bx + (half - margin_x) * corner_x
+        cy = by + (half - margin_y) * corner_y
+
+    # Clamp to valid crop center range
+    cx = max(half, min(img_w - half, int(cx)))
+    cy = max(half, min(img_h - half, int(cy)))
+    return cx, cy
+
+
 # ── Main crop generation ─────────────────────────────────────────────────
 
 def generate_crops(
@@ -214,10 +289,13 @@ def generate_crops(
     output_dir: Path,
     crop_size: int = 1024,
     stride: int = 512,
-    negatives_per_image: int = 15,
+    negatives_per_image: int = 25,
     val_ratio: float = 0.2,
     random_offset_range: Tuple[int, int] = (100, 300),
     dry_run: bool = False,
+    balance: bool = False,
+    minority_multiplier: int = 2,
+    debiasing: bool = False,
 ) -> Dict:
     """Generate native-resolution training crops.
 
@@ -231,6 +309,11 @@ def generate_crops(
         val_ratio: Fraction of source images to reserve for validation.
         random_offset_range: (min, max) px for random offset from bbox center.
         dry_run: If True, only print statistics without generating files.
+        balance: If True, minority classes (below median count) get extra crops.
+        minority_multiplier: Extra crops per defect for minority classes.
+        debiasing: If True, systematically vary defect position within crop
+            (center / off-center / near-edge / corner) to prevent the model
+            from learning that defects always appear at the crop center.
 
     Returns:
         Statistics dict.
@@ -252,6 +335,29 @@ def generate_crops(
         sys.exit(1)
 
     print(f"Found {len(img_stems)} matched image-label pairs")
+
+    # ── Pre-count per-class bbox instances for balancing ───────────────
+    per_class_bbox_count: Dict[int, int] = defaultdict(int)
+    for stem in img_stems:
+        for cls_id, *_ in labels.get(stem, []):
+            if cls_id < NC:
+                per_class_bbox_count[cls_id] += 1
+
+    minority_cls_ids: Set[int] = set()
+    if balance and per_class_bbox_count:
+        counts = sorted(per_class_bbox_count.values())
+        median_count = counts[len(counts) // 2]
+        minority_cls_ids = {c for c, n in per_class_bbox_count.items() if n < median_count}
+        print(f"  Class-balance mode: median={median_count} bboxes/class")
+        print(f"  Minority classes (×{minority_multiplier} crops): "
+              f"{[CLASS_NAMES[c] for c in sorted(minority_cls_ids)]}")
+        for cls_id in sorted(per_class_bbox_count):
+            flag = " ★" if cls_id in minority_cls_ids else ""
+            expected = per_class_bbox_count[cls_id]
+            if cls_id in minority_cls_ids:
+                expected *= minority_multiplier
+            print(f"    {CLASS_NAMES[cls_id]:12s}: {per_class_bbox_count[cls_id]:>4d} bboxes"
+                  f" → ~{expected} crops{flag}")
 
     # ── Train/val split by source image (NOT by crop) ─────────────────
     shuffled = sorted(img_stems)
@@ -308,104 +414,128 @@ def generate_crops(
             entries = labels.get(stem, [])
             used_centers: Set[Tuple[int, int]] = set()
 
-            # ── Positive crops (one per defect bbox) ──────────────────
+            # ── Positive crops (one per defect bbox; extra for minority) ─
             for cls_id, xc_norm, yc_norm, w_norm, h_norm in entries:
                 # Bbox center in pixel coords
                 bx = int(xc_norm * img_w)
                 by = int(yc_norm * img_h)
 
-                # Random offset from center (avoid perfect centering)
-                offset_x = random.randint(*random_offset_range) * random.choice([-1, 1])
-                offset_y = random.randint(*random_offset_range) * random.choice([-1, 1])
-                cx = max(crop_size // 2, min(img_w - crop_size // 2, bx + offset_x))
-                cy = max(crop_size // 2, min(img_h - crop_size // 2, by + offset_y))
+                # Class-balanced: minority classes get extra crops with varied offsets
+                n_crops = 1
+                offset_range = random_offset_range
+                if cls_id in minority_cls_ids:
+                    n_crops = minority_multiplier
+                    # Tighter offsets for extra crops → different but still valid views
+                    offset_range_extra = (50, 150)
 
-                # Quantize to reduce near-duplicate crops
-                cx_q = (cx // 50) * 50
-                cy_q = (cy // 50) * 50
-                if (cx_q, cy_q) in used_centers:
-                    # Try a different offset
-                    cx = max(crop_size // 2, min(img_w - crop_size // 2,
-                                                  bx + random.randint(-300, 300)))
-                    cy = max(crop_size // 2, min(img_h - crop_size // 2,
-                                                  by + random.randint(-300, 300)))
+                for crop_idx in range(n_crops):
+                    if debiasing:
+                        # Position de-biasing: systematically vary defect
+                        # position (center/off-center/edge/corner) to prevent
+                        # the model from learning position shortcuts.
+                        cx, cy = _compute_debiased_offset(
+                            img_w, img_h, bx, by, crop_size, random,
+                        )
+                    elif crop_idx == 0:
+                        off_min, off_max = random_offset_range
+                        # Random offset from center (avoid perfect centering)
+                        offset_x = random.randint(off_min, off_max) * random.choice([-1, 1])
+                        offset_y = random.randint(off_min, off_max) * random.choice([-1, 1])
+                        cx = max(crop_size // 2, min(img_w - crop_size // 2, bx + offset_x))
+                        cy = max(crop_size // 2, min(img_h - crop_size // 2, by + offset_y))
+                    else:
+                        off_min, off_max = offset_range_extra
+                        offset_x = random.randint(off_min, off_max) * random.choice([-1, 1])
+                        offset_y = random.randint(off_min, off_max) * random.choice([-1, 1])
+                        cx = max(crop_size // 2, min(img_w - crop_size // 2, bx + offset_x))
+                        cy = max(crop_size // 2, min(img_h - crop_size // 2, by + offset_y))
+
+                    # Quantize to reduce near-duplicate crops
                     cx_q = (cx // 50) * 50
                     cy_q = (cy // 50) * 50
                     if (cx_q, cy_q) in used_centers:
+                        # Try a different offset
+                        cx = max(crop_size // 2, min(img_w - crop_size // 2,
+                                                      bx + random.randint(-300, 300)))
+                        cy = max(crop_size // 2, min(img_h - crop_size // 2,
+                                                      by + random.randint(-300, 300)))
+                        cx_q = (cx // 50) * 50
+                        cy_q = (cy // 50) * 50
+                        if (cx_q, cy_q) in used_centers:
+                            continue
+                    used_centers.add((cx_q, cy_q))
+
+                    # Crop the image
+                    x1 = cx - crop_size // 2
+                    y1 = cy - crop_size // 2
+                    x2 = x1 + crop_size
+                    y2 = y1 + crop_size
+
+                    # Handle edge cases — shift crop window
+                    if x1 < 0:
+                        x2 -= x1
+                        x1 = 0
+                    if y1 < 0:
+                        y2 -= y1
+                        y1 = 0
+                    if x2 > img_w:
+                        x1 -= (x2 - img_w)
+                        x2 = img_w
+                    if y2 > img_h:
+                        y1 -= (y2 - img_h)
+                        y2 = img_h
+                    x1, y1 = max(0, x1), max(0, y1)
+                    x2 = min(img_w, x2)
+                    y2 = min(img_h, y2)
+
+                    # If crop is now too small (near edge), pad
+                    actual_w, actual_h = x2 - x1, y2 - y1
+                    if actual_w < crop_size * 0.5 or actual_h < crop_size * 0.5:
                         continue
-                used_centers.add((cx_q, cy_q))
 
-                # Crop the image
-                x1 = cx - crop_size // 2
-                y1 = cy - crop_size // 2
-                x2 = x1 + crop_size
-                y2 = y1 + crop_size
+                    crop = img[y1:y2, x1:x2]
+                    if crop.size == 0:
+                        continue
 
-                # Handle edge cases — shift crop window
-                if x1 < 0:
-                    x2 -= x1
-                    x1 = 0
-                if y1 < 0:
-                    y2 -= y1
-                    y1 = 0
-                if x2 > img_w:
-                    x1 -= (x2 - img_w)
-                    x2 = img_w
-                if y2 > img_h:
-                    y1 -= (y2 - img_h)
-                    y2 = img_h
-                x1, y1 = max(0, x1), max(0, y1)
-                x2 = min(img_w, x2)
-                y2 = min(img_h, y2)
+                    # Pad to target size if needed
+                    if actual_w < crop_size or actual_h < crop_size:
+                        pad_r = max(0, crop_size - actual_w)
+                        pad_b = max(0, crop_size - actual_h)
+                        crop = cv2.copyMakeBorder(crop, 0, pad_b, 0, pad_r,
+                                                  cv2.BORDER_CONSTANT, value=(114, 114, 114))
 
-                # If crop is now too small (near edge), pad
-                actual_w, actual_h = x2 - x1, y2 - y1
-                if actual_w < crop_size * 0.5 or actual_h < crop_size * 0.5:
-                    continue
-
-                crop = img[y1:y2, x1:x2]
-                if crop.size == 0:
-                    continue
-
-                # Pad to target size if needed
-                if actual_w < crop_size or actual_h < crop_size:
-                    pad_r = max(0, crop_size - actual_w)
-                    pad_b = max(0, crop_size - actual_h)
-                    crop = cv2.copyMakeBorder(crop, 0, pad_b, 0, pad_r,
-                                              cv2.BORDER_CONSTANT, value=(114, 114, 114))
-
-                # Find labels that overlap this crop
-                crop_lines: List[str] = []
-                for e_cls, e_xc, e_yc, e_w, e_h in entries:
-                    overlap = _bbox_overlap(
-                        (x1 + x2) / 2, (y1 + y2) / 2,  # crop center
-                        crop_size, crop_size,
-                        e_xc, e_yc, e_w, e_h, img_w, img_h,
-                    )
-                    if overlap >= MIN_BBOX_VISIBILITY:
-                        nbox = _normalize_bbox_to_crop(
-                            e_xc, e_yc, e_w, e_h, img_w, img_h,
-                            (x1 + x2) / 2, (y1 + y2) / 2,
+                    # Find labels that overlap this crop
+                    crop_lines: List[str] = []
+                    for e_cls, e_xc, e_yc, e_w, e_h in entries:
+                        overlap = _bbox_overlap(
+                            (x1 + x2) / 2, (y1 + y2) / 2,  # crop center
                             crop_size, crop_size,
+                            e_xc, e_yc, e_w, e_h, img_w, img_h,
                         )
-                        if nbox:
-                            crop_lines.append(f"{e_cls} {nbox[0]:.6f} {nbox[1]:.6f} "
-                                              f"{nbox[2]:.6f} {nbox[3]:.6f}")
-                            if e_cls < NC:
-                                stats["per_class_boxes"][CLASS_NAMES[e_cls]] += 1
+                        if overlap >= MIN_BBOX_VISIBILITY:
+                            nbox = _normalize_bbox_to_crop(
+                                e_xc, e_yc, e_w, e_h, img_w, img_h,
+                                (x1 + x2) / 2, (y1 + y2) / 2,
+                                crop_size, crop_size,
+                            )
+                            if nbox:
+                                crop_lines.append(f"{e_cls} {nbox[0]:.6f} {nbox[1]:.6f} "
+                                                  f"{nbox[2]:.6f} {nbox[3]:.6f}")
+                                if e_cls < NC:
+                                    stats["per_class_boxes"][CLASS_NAMES[e_cls]] += 1
 
-                # Save
-                crop_name = f"{stem}_p{img_count:04d}"
-                cv2.imwrite(str(out_img_dir / f"{crop_name}.jpg"), crop,
-                            [cv2.IMWRITE_JPEG_QUALITY, 95])
-                (out_lbl_dir / f"{crop_name}.txt").write_text(
-                    "\n".join(crop_lines) + "\n" if crop_lines else "\n",
-                    encoding="utf-8",
-                )
-                img_count += 1
-                box_count += len(crop_lines)
-                stats["positive_crops"][split_tag] += 1
-                stats["defect_boxes"][split_tag] += len(crop_lines)
+                    # Save
+                    crop_name = f"{stem}_p{img_count:04d}"
+                    cv2.imwrite(str(out_img_dir / f"{crop_name}.jpg"), crop,
+                                [cv2.IMWRITE_JPEG_QUALITY, 95])
+                    (out_lbl_dir / f"{crop_name}.txt").write_text(
+                        "\n".join(crop_lines) + "\n" if crop_lines else "\n",
+                        encoding="utf-8",
+                    )
+                    img_count += 1
+                    box_count += len(crop_lines)
+                    stats["positive_crops"][split_tag] += 1
+                    stats["defect_boxes"][split_tag] += len(crop_lines)
 
             # ── Negative crops (defect-free but structurally similar) ─
             neg_count = 0
@@ -525,8 +655,9 @@ Examples:
         help="Stride for negative crop sliding window (default: 512)",
     )
     parser.add_argument(
-        "--negatives-per-image", type=int, default=15,
-        help="Number of negative crops per source image (default: 15)",
+        "--negatives-per-image", type=int, default=25,
+        help="Number of negative crops per source image (default: 25, was 15 — "
+             "increased for better FP suppression on SVHBNM)",
     )
     parser.add_argument(
         "--val-ratio", type=float, default=0.2,
@@ -535,6 +666,22 @@ Examples:
     parser.add_argument(
         "--max-offset", type=int, default=300,
         help="Maximum random offset from bbox center in px (default: 300)",
+    )
+    parser.add_argument(
+        "--balance", action="store_true",
+        help="Class-balanced mode: minority classes (below median) get 2-3 crops per "
+             "defect with varied offsets, instead of 1. Mitigates class imbalance.",
+    )
+    parser.add_argument(
+        "--minority-multiplier", type=int, default=2,
+        help="Extra crops per defect for minority classes in --balance mode (default: 2)",
+    )
+    parser.add_argument(
+        "--debiasing", action="store_true",
+        help="Position de-biasing: systematically vary defect position within the crop "
+             "(center 30% / off-center 30% / near-edge 25% / corner 15%). "
+             "Prevents the model from learning that defects always appear at crop center. "
+             "Recommended for training to reduce position bias.",
     )
     parser.add_argument(
         "--seed", type=int, default=SEED,
@@ -571,6 +718,9 @@ Examples:
         val_ratio=args.val_ratio,
         random_offset_range=(100, args.max_offset),
         dry_run=args.dry_run,
+        balance=args.balance,
+        minority_multiplier=args.minority_multiplier,
+        debiasing=args.debiasing,
     )
 
     print(f"\n{'=' * 60}")

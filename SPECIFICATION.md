@@ -33,7 +33,7 @@
 
 ### 1.2 部署形态
 
-| 维度 | 车载端 (vehicle) | 地面端 (ground) |
+| 维度 | 车载端 (onboard) | 地面端 (ground) |
 |------|-----------------|----------------|
 | GPU 配置 | 单卡 RTX 4090 | 双卡 RTX 4090 |
 | 操作系统 | Windows 10/11 Pro | Windows 10/11 Pro |
@@ -137,16 +137,21 @@
 
 ### 2.2 训练功能
 
-**FR-008: 四阶段训练管道**
-- Stage A：COCO 预训练（使用官方权重）
-- Stage B：ROI 提案器训练（YOLO11n，200 epochs，640 分辨率）
-- Stage C1：缺陷检测 Head 预热（50 epochs，冻结 backbone）
-- Stage C2：缺陷检测全量训练（200 epochs，强增强，Cosine LR）
-- Stage C3：缺陷检测微调（50 epochs，弱增强，低 LR）
+**FR-008: 统一多阶段训练管道 (v2)**
+- Stage 1A：公开缺陷 Neck/Head 预热（40 epochs, 1024, generic_defect 1 类）
+- Stage 1B：公开缺陷 Backbone 适应（60 epochs, 1024, 低 LR）
+- Stage 2：接触网领域适配（40 epochs, 1024, 1 类→7 类, nc_mismatch）
+- Stage 3：主训练（80 epochs, 1280, 全解冻, Copy-Paste=0.05）
+- Stage 4：短微调（15 epochs, 1280, 零增强, warmup=0）
+- Stage 5 (可选)：难负样本挖掘 + 阈值校准（20 epochs）
+- Stage P2 [消融]：TT100K P2 头预热（仅四尺度模型）
+
+> 详见 [docs/Train_guide.md](docs/Train_guide.md) 和 [config/README.md](config/README.md)
 
 **FR-009: CLI 入口点**
+- `train-pipeline`：统一训练管道（`python scripts/train_pipeline.py`）
 - `train-roi`：ROI 提案器训练
-- `train-defect`：缺陷检测三阶段训练
+- `train-defect`：缺陷检测训练（Legacy 三阶段）
 - `synthesize-defects`：合成缺陷数据生成
 - `export-tensorrt`：TensorRT 模型导出
 - `subway-server`：FastAPI 推理服务启动
@@ -500,7 +505,7 @@ generate_missing_defect(
 ```json
 {
   "status": "healthy",
-  "mode": "vehicle",
+  "mode": "onboard",
   "gpu": {
     "available": true,
     "gpu_count": 1,
@@ -521,7 +526,7 @@ generate_missing_defect(
 ```json
 {
   "image_path": "/data/images/20260624_001.jpg",
-  "model_type": "vehicle",
+  "model_type": "onboard",
   "confidence_threshold": 0.40,
   "slice_size": 1024,
   "slice_overlap": 0.15,
@@ -532,7 +537,7 @@ generate_missing_defect(
 | 字段 | 类型 | 必填 | 默认值 | 说明 |
 |------|------|------|--------|------|
 | `image_path` | string | 是 | — | 图像文件路径 |
-| `model_type` | string | 否 | "vehicle" | "vehicle" 或 "ground" |
+| `model_type` | string | 否 | "onboard" | "onboard" 或 "ground" |
 | `confidence_threshold` | float | 否 | 0.40 | 缺陷检测置信阈值 |
 | `slice_size` | int | 否 | 1024 | 切片尺寸 |
 | `slice_overlap` | float | 否 | 0.15 | 切片重叠率 |
@@ -566,7 +571,7 @@ generate_missing_defect(
 **请求**:
 ```json
 {
-  "model_type": "vehicle",
+  "model_type": "onboard",
   "model_version": "yolov11-s-v1.2",
   "force_reload": false
 }
@@ -576,7 +581,7 @@ generate_missing_defect(
 ```json
 {
   "success": true,
-  "model_type": "vehicle",
+  "model_type": "onboard",
   "model_version": "yolov11-s-v1.2",
   "load_time_ms": 850,
   "message": "Model loaded successfully"
@@ -669,7 +674,7 @@ data/
 │   ├── labels/{train,val}/
 │   └── defect_data.yaml
 ├── multi_datasets/                 # 多源公开数据集
-│   ├── public/{deeppcb,gc10_det,neu_det}/
+│   ├── public/{kolektor_sdd2,rsdds,gc10_det,neu_det}/
 │   └── mixed_pretrain/
 ├── roi/                            # ROI 提案器数据集配置
 │   └── roi_data.yaml
@@ -856,7 +861,7 @@ export-tensorrt --model best.pt --int8 --calibration_data datasets/calibration/ 
 
 ```bash
 # 车载端（单模型）
-subway-server --port 8001 --model best.pt --mode vehicle
+subway-server --port 8001 --model best.pt --mode onboard
 
 # 地面端（双 GPU + WBF）
 subway-server --port 8001 --model best.pt --model_b best_p2.pt --mode ground
@@ -869,7 +874,7 @@ subway-server --port 8001 --model best.pt --model_b best_p2.pt --mode ground
 | `--model` | 必填 | 缺陷检测模型 .pt |
 | `--roi_model` | yolo11n.pt | ROI 提案器 |
 | `--model_b` | None | 地面端第二模型 |
-| `--mode` | vehicle | vehicle / ground |
+| `--mode` | onboard | onboard / ground |
 | `--slice_size` | 1024 | 切片尺寸 |
 | `--overlap` | 0.15 | 切片重叠率 |
 | `--roi_conf` | 0.15 | ROI 置信阈值 |

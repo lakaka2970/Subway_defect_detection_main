@@ -2,7 +2,7 @@
 
 基于 YOLO11 + EMA/SimAM 注意力的两阶段 AI 缺陷检测系统，用于福州地铁接触网超高清图像（1.27 亿像素）的智能化分析。
 
-> 完整规格说明见 [SPECIFICATION.md](SPECIFICATION.md)
+> 完整规格说明见 [SPECIFICATION.md](../SPECIFICATION.md)
 
 ## 项目概述
 
@@ -50,13 +50,17 @@ Subway_defect_detection_main/
 │   ├── setup_autodl.sh                    # AutoDL 云平台环境配置
 │   ├── prepare_dataset.py                # 一键自制数据集准备
 │   ├── split_dataset.py                  # 按源图分组 train/val 划分
-│   ├── generate_native_crops.py          # 原生分辨率 crop 生成
+│   ├── generate_native_crops.py          # 原生分辨率 crop 生成 (v2: 类别平衡 + 位置去偏置)
 │   ├── validate_dataset.py               # 数据集完整性校验
-│   ├── multi_source_dataset_builder.py   # 多源公开数据集构建器 (AutoDL)
-│   ├── multi_source_pretrain_yaml.py     # 多阶段训练配置生成器
+│   ├── multi_source_dataset_builder.py   # 多源公开数据集构建器 (v2: +SDD2+RSDDs -DeepPCB)
+│   ├── multi_source_pretrain_yaml.py     # 多阶段训练配置生成器 (v2: 1A/1B 拆分)
 │   ├── setup_coco_from_autodl.py         # COCO 数据集设置 (AutoDL)
-│   ├── generate_scene_augmentations.py   # 场景增强（隧道/日照/模糊）
+│   ├── generate_scene_augmentations.py   # 场景增强 (v2: +震动+白平衡, 类别感知)
 │   ├── generate_synthetic_defects.py     # Inpainting 合成缺陷
+│   ├── generate_defect_copy_paste.py     # ★ 缺陷感知 Copy-Paste (v2 新增)
+│   ├── collect_hard_negatives.py         # ★ 难负样本收集 (v2 新增)
+│   ├── calibrate_thresholds.py           # ★ 每类阈值校准 (v2 新增)
+│   ├── audit_labels.py                    # ★ 标注质量审计 (v2 新增)
 │   ├── fix_classes_txt.py                # classes.txt 自动修复
 │   └── create_defect_data_yaml.py        # defect_data.yaml 创建
 ├── config/                                 # YAML 集中配置
@@ -230,14 +234,14 @@ python scripts/train_pipeline.py --model yolo11m-EMA-SimAM --device 0
 
 这条命令自动完成：安全检查 → 参数调优 → 生成配置 → 多阶段训练 → 输出部署模型。
 
-核心流程只有 4 个阶段：
+核心流程只有 5 个阶段（Stage 1 拆分为 1A+1B）：
 
 ```
-Stage 1                 Stage 2              Stage 3             Stage 4
-公开缺陷预训练      →    领域适配        →    主训练         →    短微调
-DeepPCB+NEU+GC10        → 7类接触网           1280 全解冻          低lr 零增强
-1 类 generic_defect     冻结 backbone         120 epoch            30 epoch, 早停
-120 epoch, 1024         50 epoch              ★ 最大mAP提升        → 部署模型
+Stage 1A              Stage 1B             Stage 2              Stage 3             Stage 4
+公开缺陷 Head 预热 → 公开缺陷 Backbone → 领域适配         →   主训练         →    短微调
+NEU+GC10+SDD2+RSDDs   低 LR 充分训练       → 7类接触网           1280 全解冻          低lr 零增强
+1 类 generic_defect    1 类 generic_defect  冻结 backbone         80 epoch             15 epoch, 早停
+40 epoch, 1024         60 epoch, 1024       40 epoch              ★ 最大mAP提升         → 部署模型
 ```
 
 > **核心原则**：每个阶段产出可独立验证，不达标不进下一阶段。
@@ -286,30 +290,43 @@ python scripts/train_pipeline.py --model yolo11m-EMA-SimAM --device 0 --batch 24
 
 ### 各阶段详解
 
-#### ★ Stage 1: 公开缺陷预训练
+#### ★ Stage 1A: 公开缺陷 Neck/Head 预热
 
 ```text
-目的: 让 backbone/neck 学习工业异常纹理——"哪里有异常"
+目的: 让 neck/head 学习工业异常纹理——"哪里有异常"
 初始化: COCO yolo11s.pt / yolo11m.pt
-数据: DeepPCB + NEU-DET + GC10-DET → 合并为 generic_defect (1类)
+数据: NEU-DET + GC10-DET + KolektorSDD2 + RSDDs → 合并为 generic_defect (1类)
+      (DeepPCB 已弃用 —— PCB 电路板缺陷与金属件视觉特征差异大)
 ```
 
 ```bash
-train-defect --data data/multi_datasets/mixed_pretrain/data.yaml \
-    --model subway_defect/models/yolo11s-EMA-SimAM.yaml \
-    --coco_pretrain --device 0 --stages 1 --pretrain-config-dir
+python scripts/train_pipeline.py --stages 1a --model yolo11m-EMA-SimAM --device 0
 ```
 
 | 参数 | 值 | 说明 |
 |------|-----|------|
-| epochs | 120 | 公开数据量大, 充分训练 |
+| epochs | 40 | 仅预热 neck/head |
 | imgsz | 1024 | 匹配公开数据集分辨率 |
 | lr0 | 0.001 | AdamW 初始学习率 |
 | mosaic | 0.2 | 轻量 mosaic, 保留结构 |
 | erasing | 0 | 不做擦除, 保护小缺陷纹理 |
-| freeze | [0..10] | 前10 epoch 冻结 backbone 前半 |
+| freeze | [0..10] | 冻结全部 backbone 层 |
 
-**验收**: loss 平稳下降, 无 spike。输出: `weights/stage1_public_pretrain.pt`
+#### ★ Stage 1B: 公开缺陷 Backbone 适应
+
+```text
+目的: 低学习率解冻 backbone, 充分适配工业异常特征
+初始化: Stage 1A best.pt
+```
+
+| 参数 | 值 | 说明 |
+|------|-----|------|
+| epochs | 60 | backbone 深层适应 |
+| imgsz | 1024 | 一致 |
+| lr0 | 0.0003 | 低 LR 保护预训练权重 |
+| freeze | [0..5] | 仅冻结浅层 backbone |
+
+**验收**: loss 平稳下降, 无 spike。输出: `weights/stage1a_public_head.pt` → `weights/stage1b_public_backbone.pt`
 
 ---
 
@@ -317,21 +334,19 @@ train-defect --data data/multi_datasets/mixed_pretrain/data.yaml \
 
 ```text
 目的: 从公开缺陷域切换到真实接触网 7 类
-初始化: Stage 1 best.pt
+初始化: Stage 1B best.pt (nc=1 → nc=7, Detect cls layers 重建)
 数据: subway_crops (1024 原生分辨率 crop, 7 类接触网缺陷)
 ```
 
 ```bash
-train-defect --data data/subway_crops/subway_crops.yaml \
-    --model subway_defect/models/yolo11s-EMA-SimAM.yaml \
-    --pretrained weights/stage1_public_pretrain.pt \
-    --device 0 --stages 2 --pretrain-config-dir
+python scripts/train_pipeline.py --stages 2 --model yolo11m-EMA-SimAM --device 0
 ```
 
 | 参数 | 值 | 说明 |
 |------|-----|------|
-| epochs | 50 | Neck/head 收敛快 |
+| epochs | 40 | v2: 50→40, 预训练 backbone 收敛快 |
 | imgsz | 1024 | 与 Stage 1 一致 |
+| lr0 | 0.0008 | v2: cosine schedule |
 | mosaic | 0.1 | 几乎关闭, 最小化失真 |
 | freeze | [0..7] | 冻结 backbone 前 60% |
 
@@ -344,26 +359,25 @@ train-defect --data data/subway_crops/subway_crops.yaml \
 ```text
 目的: 小目标尺度适应——贡献最大 mAP 提升的阶段
 初始化: Stage 2 best.pt
-数据: subway_crops (1280 原生分辨率, 7 类)
+数据: subway_crops (1280 原生分辨率, 7 类, 可选 Copy-Paste 增强)
 ```
 
 ```bash
-train-defect --data data/subway_crops/subway_crops.yaml \
-    --model subway_defect/models/yolo11s-EMA-SimAM.yaml \
-    --pretrained weights/stage2_domain_adapt.pt \
-    --device 0 --stages 3 --pretrain-config-dir
+python scripts/train_pipeline.py --stages 3 --model yolo11m-EMA-SimAM --device 0
 ```
 
-| 参数 | 值 | 与 legacy C2 的区别 |
+| 参数 | 值 | 与 v1 的区别 |
 |------|-----|-------------------|
-| epochs | 120 | — |
+| epochs | **80** | 120→80: peak 在 epoch ~57 |
 | imgsz | **1280** | 缺陷从 8→10px |
-| optimizer | **AdamW** | C2 用 SGD → 动量丢失 |
-| mosaic | 0.2 | C2 是 0.5 → 失真大 |
-| erasing | 0 | C2 是 0.1 → 破坏小目标 |
-| copy_paste | 0 | C2 是 0.3 → 伪影 |
-| close_mosaic | **40** | C2 是 15 |
-| patience | 40 | 防止后半程过拟合 |
+| optimizer | **AdamW** | cos_lr schedule |
+| lr0 | **0.0005** | 更稳定 |
+| mosaic | **0.15** | 轻微失真, 保护小目标 |
+| erasing | 0 | 保护 8-10px 小目标 |
+| copy_paste | **0.05** | v2: 缺陷感知 Copy-Paste (离线生成) |
+| close_mosaic | **35** | 最后 35 epochs 纯净训练 |
+| patience | **28** | 防止后半程过拟合 |
+| weight_decay | **0.00075** | 轻度增强正则化 |
 
 **验收**: mAP50 比 Stage 2 提升 ≥ +0.05。输出: `weights/stage3_main.pt`
 
@@ -377,18 +391,16 @@ train-defect --data data/subway_crops/subway_crops.yaml \
 ```
 
 ```bash
-train-defect --data data/subway_crops/subway_crops.yaml \
-    --model subway_defect/models/yolo11s-EMA-SimAM.yaml \
-    --pretrained weights/stage3_main.pt \
-    --device 0 --stages 4 --pretrain-config-dir
+python scripts/train_pipeline.py --stages 4 --model yolo11m-EMA-SimAM --device 0
 ```
 
 | 参数 | 值 | 说明 |
 |------|-----|------|
-| epochs | 30 | 短微调, 时间长反而退化 |
-| lr0 | 3e-5 | 极低学习率 |
+| epochs | **15** | v2: 30→15, 短微调早停 |
+| lr0 | **1e-5** | 极低学习率 |
 | mosaic/erasing | 0 | 零增强, 只看真实图 |
-| patience | 8 | 快速早停 |
+| warmup_epochs | **0** | v2: 关闭 warmup 防 bias LR 尖刺 |
+| patience | **5** | v2: 快速早停 |
 | freeze | [0..9] | 冻结 backbone 前 70% |
 | save_period | 1 | 每 epoch 保存, 选 best_mAP50-95 |
 
@@ -402,27 +414,41 @@ train-defect --data data/subway_crops/subway_crops.yaml \
 <details>
 <summary><b>可选阶段（点击展开）</b></summary>
 
-##### Stage P2: TT100K P2 头预热
+##### Stage P2: TT100K P2 头预热 [⚠ ABLATION ONLY]
 
-<small>仅当使用 **P2 四尺度模型**（如 `yolo11s-P2-EMA-SimAM`）时需要。让新增 P2 检测分支先学会小目标定位。</small>
+<small>**P2 四尺度模型已被实验证明整体性能更差**（mAP50 0.497→0.430, Precision 0.439→0.372），不推荐作为主线模型。仅当运行受控消融实验时才使用。</small>
+
+<small>详见报告 `docs/plans/2026-06-27_方案C_当前模型性能分析_问题诊断与改进建议.md` 第 4 节。</small>
 
 ```bash
-python scripts/train_pipeline.py --stages p2 1 2 3 4
+# [仅消融实验] P2 四尺度模型 + P2 头预热
+python scripts/train_pipeline.py --stages p2 1a 1b 2 3 4 --model yolo11m-P2-EMA-SimAM
 ```
 
 - 数据: TT100K (交通标志), 1 类 `tiny_object`, 80 epoch, 1024
 - 输出: `weights/stage_p2_tiny_pretrain.pt`
+- **注意**: pipeline 会自动显示 P2 弃用警告
 
 ##### Stage 5: 难负样本挖掘 + 阈值校准
 
 <small>仅当 Stage 4 Precision < 90% 时建议运行。用 Stage 4 模型收集误检 → 加入训练集重训 → 每类单独阈值搜索。</small>
 
 ```bash
-python scripts/train_pipeline.py --stages 5
+# Step 1: 收集误检 (FP) crop
+python scripts/collect_hard_negatives.py --model weights/stage4_best_finetune.pt
+
+# Step 2: 将 data/hard_negatives/ 下各子目录复制到训练数据中
+
+# Step 3: 难负样本训练
+python scripts/train_pipeline.py --stages 5 --model yolo11m-EMA-SimAM --device 0
+
+# Step 4: 每类阈值校准 (或使用 --auto-hnm 自动执行)
+python scripts/calibrate_thresholds.py --model weights/stage5_calibrated.pt
 ```
 
-- 30 epoch, 零增强, lr=2e-5, 冻结 backbone 前 70%
-- 输出: `weights/stage5_calibrated.pt`
+- 20 epoch, 零增强, lr=2e-5, 冻结 backbone 前 70%
+- v2 改进: warmup_epochs=0 (防止 bias LR 尖刺)
+- 输出: `weights/stage5_calibrated.pt` + `data/calibrated_thresholds/thresholds.json`
 
 ##### Stage 0: 数据完整性检查
 
@@ -465,11 +491,13 @@ python scripts/multi_source_dataset_builder.py
 
 ```
 data/multi_datasets/
-├── public/deeppcb/      # DeepPCB (1500 对, 6 类 PCB 缺陷)
-├── public/gc10_det/     # GC10-DET (2300 张, 10 类金属缺陷)
-├── public/neu_det/      # NEU-DET (1800 张, 6 类钢材缺陷)
-├── mixed_pretrain/      # 合并: 1 类 generic_defect
-└── subway_crops/        # 接触网原生分辨率 crop (train+val)
+├── public/gc10_det/       # GC10-DET (3570 张, 10 类金属缺陷)
+├── public/neu_det/        # NEU-DET (1800 张, 6 类钢材缺陷)
+├── public/kolektor_sdd2/  # ★ NEW: KolektorSDD2 (3335 张, 金属表面划痕/斑点)
+├── public/rsdds/          # ★ NEW: RSDDs (195+ 张, 铁轨表面裂纹/压痕)
+├── mixed_pretrain/        # 合并: 1 类 generic_defect
+│   # DeepPCB 已弃用 — PCB 电路板缺陷特征与金属件差异大
+└── subway_crops/          # 接触网原生分辨率 crop (train+val)
 ```
 
 #### Phase 1C: 生成训练配置
@@ -488,11 +516,12 @@ python scripts/multi_source_pretrain_yaml.py --stages 1 2 3 4
 | 统一阶段 | 旧 Phase (代码) | 旧 S 系统 | 旧 C 系统 | 说明 |
 |---------|:---:|:---:|:---:|------|
 | Stage P2 | Phase 2 | — | — | TT100K P2头预热 (可选) |
-| Stage 1 | Phase 3 | — | — | 公开缺陷预训练 |
-| Stage 2 | Phase 4 | S1 | C1 | 领域适配 |
-| Stage 3 | Phase 5 | S2 | C2 | 主训练 |
-| Stage 4 | Phase 6 | S3 | C3 | 短微调 |
-| Stage 5 | Phase 7+8 | S4 | — | 难负样本+校准 (可选) |
+| Stage 1A | Phase 3a | — | — | 公开缺陷 Neck/Head 预热 |
+| Stage 1B | Phase 3b | — | — | 公开缺陷 Backbone 适应 |
+| Stage 2 | Phase 4 | S1 | C1 | 领域适配 (1类→7类) |
+| Stage 3 | Phase 5 | S2 | C2 | 主训练 (1280全解冻) |
+| Stage 4 | Phase 6 | S3 | C3 | 短微调 (低lr零增强) |
+| Stage 5 | Phase 7+8 | S4 | — | 难负样本+阈值校准 (可选) |
 
 </details>
 
@@ -530,9 +559,155 @@ train-defect --stages c1 c2 c3 --data data/Defect_dataset/defect_data.yaml --coc
 | Stage 3 收益不明显 | 确认 imgsz=1280 (非 1024), mosaic≤0.2 |
 | Stage 4 mAP 反而下降 | 正常——降低 patience 或减少 epochs |
 | 训练中断后恢复 | `python scripts/train_pipeline.py --stages <失败阶段> <后续阶段>` |
-| P2 模型训练不收敛 | 先跑 Stage P2 (TT100K 预热) |
+| P2 模型训练不收敛 | 先跑 Stage P2 (TT100K 预热); 但 P2 已被证明整体更差, 建议换用三尺度模型 |
+| 误报过多 (Precision低) | 运行 `audit_labels.py` 审计标注, 再跑 Stage 5 难负样本 |
+| 模型学到位置偏置 | 使用 `--debiasing` 标志运行 `generate_native_crops.py` |
 
-> 训练超参数集中管理在 [`config/train/`](config/train/)，推理参数在 [`config/model/inference.yaml`](config/model/inference.yaml)。可直接修改 YAML，无需改代码。
+> 训练超参数集中管理在 [`config/train/`](../config/train/)，推理参数在 [`config/model/inference.yaml`](../config/model/inference.yaml)。可直接修改 YAML，无需改代码。
+
+---
+
+### 标注质量标准
+
+#### 松动类标注规范
+
+VHBNL 和 SVHBNL 属于细粒度状态识别——"松动"不是独立物体，而是螺母/螺栓的位置状态异常。当前 Precision 低（VHBNL=0.367）的一个重要原因是标注边界模糊。
+
+建议标注员遵循：
+
+```text
+normal（正常，不标框）
+  螺母位置正常，与基座/螺纹/垫片相对关系无异常
+
+loose（松动，标 VHBNL / SVHBNL / SVHTNL）
+  螺母存在但相对基座有明显偏移
+  螺母与垫片间可见异常间隙
+  螺栓螺纹露出长度异常
+
+missing（缺失，标 VHBNM / SVHBNM）
+  目标位置应有螺母但不可见
+  明显空缺，可见螺栓孔或空基座
+
+uncertain（不确定，不进入训练集）
+  光照/遮挡导致无法可靠判断
+  边界模糊, 两位标注员意见不一致
+```
+
+**框尺寸建议**：
+- 螺母缺失类：框应包含基座 + 螺栓孔, 提供结构上下文
+- 螺母松动类：框应包含螺母 + 垫片 + 相邻基座, 便于判断相对位置
+- 销钉缺口类：框应包含销钉头 + 开口销孔 + 腕臂底座局部
+
+**一致性检查**：
+- 同一源图中, 相似结构的标注尺度应一致
+- 缺失 vs 松动边界需在标注团队内部达成一致
+
+#### 标注质量审计
+
+使用 `audit_labels.py` 工具自动标记可疑标注：
+
+```bash
+# 用 Stage 3/4 模型对验证集做审计
+python scripts/audit_labels.py --model weights/stage3_main.pt --split val
+
+# 聚焦 SVHBNM（问题最大的类别）
+python scripts/audit_labels.py --model weights/stage3_main.pt --classes SVHBNM
+
+# 对训练集做全量审计
+python scripts/audit_labels.py --model weights/stage3_main.pt --split train --max-samples 200
+
+# 仅统计不保存
+python scripts/audit_labels.py --model weights/stage3_main.pt --dry-run
+```
+
+输出：
+```
+data/label_audit/
+├── high_conf_fp/       # 模型高置信度误检 → 可能是漏标或标注错误
+├── low_conf_fn/        # 模型漏检/低置信 → 可能是标注错误或极难样本
+├── audit_summary.json  # 每类统计 + 优先级排序
+└── audit_report.txt    # 人类可读报告 + 审核清单
+```
+
+**人工审核优先级**：按 `audit_report.txt` 中的 priority_score 排序，优先审查高分 FP 和 FN。
+
+---
+
+### 数据扩充最佳实践
+
+生成 `subway_crops` 时推荐使用以下命令：
+
+```bash
+python scripts/generate_native_crops.py \
+    --crop-size 1024 \
+    --negatives-per-image 25 \
+    --balance \
+    --debiasing
+```
+
+各标志的作用：
+
+| 标志 | 作用 | 何时使用 |
+|------|------|---------|
+| `--negatives-per-image 25` | 每张源图生成 25 个负样本 crop | 始终推荐（降低 FP） |
+| `--balance` | 少数类（SVHBNL/CBVPM）额外生成 crop | 类别不均衡时 |
+| `--debiasing` | 缺陷位置系统性变化（中心30%/偏中心30%/边缘25%/角落15%） | 始终推荐（防止位置过拟合） |
+
+---
+
+### 未来改进方向（尚未实施）
+
+以下建议来自训练结果分析报告，已记录但暂未实施代码。作为下一轮优化的参考方向。
+
+#### 方案 C：Tiny Transformer 二级复核分类器
+
+**背景**（详见 `docs/plans/2026-06-27_方案C_当前模型性能分析_问题诊断与改进建议.md`）:
+
+当前 YOLO 主检测器的瓶颈不是定位能力，而是**细粒度状态判别**——YOLO 能发现"可能有异常的区域"，但对"正常 vs 松动 vs 缺失"的区分不够稳定，尤其是 SVHBNM（1,197 个样本→mAP50 仅 0.251）和 VHBNL（Precision 仅 0.367）。
+
+**设计思路**：
+
+```
+YOLO 候选框 → 难类+低置信候选 → Tiny Transformer 复核 → 分数融合 → 最终输出
+```
+
+**推荐方案**：
+
+| 要素 | 推荐 |
+|------|------|
+| 模型 | MobileViT-S（车载端）/ Swin-Tiny（地面端） |
+| 输入 | 224×224, 多尺度 crop (1.2x/2.0x/3.0x) |
+| 类别 | 4 类状态: `normal` / `missing_nut` / `loose_nut` / `pin_gap` |
+| 融合 | `s_final = 0.6 × s_yolo + 0.4 × s_cls` |
+| 推理成本 | 50-100 个候选 × 1-2ms ≤ 200ms |
+
+**实施要点**：
+
+1. 从 YOLO 推理结果收集 TP/FP/FN crop → 构建分类器数据集
+2. 按源图分组划分 train/val/test（防止同源泄漏）
+3. 增强限于亮度/轻微模糊/轻微噪声（禁止大角度旋转/翻转）
+4. 第一版只做过滤（不倒写类别），第二版再尝试类别修正
+5. `normal : defect = 1.5 : 1` 到 `2 : 1`，强过采样 YOLO 误报区域
+
+**预期收益**：Precision 0.44 → ≥0.60（第一阶段），SVHBNM mAP50 0.25 → ≥0.35
+
+**需要新建的文件**：
+- `scripts/build_classifier_dataset.py` — 从 YOLO TP/FP/FN 收集 crop
+- `subway_defect/classification/secondary_classifier.py` — 训练/推理封装
+- `config/classification/` — 分类器训练配置
+- `scripts/train_secondary_classifier.py` — 训练入口
+
+#### 其他未实施建议
+
+| 建议 | 来源 | 状态 |
+|------|------|------|
+| SVHBNM 标注审计 | 报告 §5.2 | `audit_labels.py` 已提供工具, 待人工执行 |
+| 位置去偏置 crop | 报告 §3.3.4 | `--debiasing` 标志已实现 |
+| P2 模型正式弃用 | 报告 §4.3-4.4 | pipeline 已添加弃用警告 |
+| 松动类标注规范 | 报告 §5.2 | 已写入本文档 §标注质量标准 |
+
+---
+
 ## 推理部署
 
 ### 推理服务启动
@@ -764,15 +939,16 @@ synthesize-defects --images datasets/images/train/ \
 
 ## 设计文档
 
-- [完整规格说明书](SPECIFICATION.md) — 项目需求、架构、接口、数据、测试等完整规范
-- [AI 算法设计文档](docs/地铁接触网缺陷检测AI算法设计文档.md) — 核心算法完整设计
-- [系统开发方案](docs/开发方案(5.30)/0-总览.md) — 前后端 + DL 系统架构
-- [实现计划 1: 核心模型](docs/plans/2026-06-23-plan-1-core-model-architecture.md)
-- [实现计划 2: 训练管道](docs/plans/2026-06-23-plan-2-training-pipeline.md)
-- [实现计划 3: 推理引擎](docs/plans/2026-06-23-plan-3-inference-engine.md)
-- [📊 分析: 模型特征学习效率诊断](docs/plans/2026-06-25-analysis-feature-learning-efficiency.md) — C2 零收益根因分析
-- [🔧 方案: 结构改进与训练流程优化](docs/plans/2026-06-25-Structure-improvement-plam.md) — P2-Lite 架构 + 五阶段训练
-- [📦 方案: 多源数据集训练建议](docs/plans/2026-06-25-Multi-source-datasets-training-recomendation.md) — 公开数据集整合策略
+- [完整规格说明书](../SPECIFICATION.md) — 项目需求、架构、接口、数据、测试等完整规范
+- [AI 算法设计文档](地铁接触网缺陷检测AI算法设计文档.md) — 核心算法完整设计
+- [系统开发方案](开发方案(5.30)/0-总览.md) — 前后端 + DL 系统架构
+- [实现计划 1: 核心模型](plans/2026-06-23-plan-1-core-model-architecture.md)
+- [实现计划 2: 训练管道](plans/2026-06-23-plan-2-training-pipeline.md)
+- [实现计划 3: 推理引擎](plans/2026-06-23-plan-3-inference-engine.md)
+- [📊 分析: 模型特征学习效率诊断](plans/2026-06-25-analysis-feature-learning-efficiency.md) — C2 零收益根因分析
+- [🔧 方案: 结构改进与训练流程优化](plans/2026-06-25-Structure-improvement-plam.md) — P2-Lite 架构 + 五阶段训练
+- [📦 方案: 多源数据集训练建议](plans/2026-06-25-Multi-source-datasets-training-recomendation.md) — 公开数据集整合策略
+- [📊 分析: 当前模型性能诊断与改进建议](plans/2026-06-27_方案C_当前模型性能分析_问题诊断与改进建议.md) — 三尺度 vs P2 对照 + 方案 C
 
 ## 技术参考
 

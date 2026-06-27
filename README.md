@@ -11,7 +11,7 @@
 ## 目录结构
 
 ```
-Subway_defect_AI/
+Subway_defect_detection_main/
 ├── subway_defect/                 # 核心 AI 包
 │   ├── deployment/                # FastAPI 推理服务 + TensorRT 导出
 │   │   ├── fastapi_server.py      # ★ 推理服务入口（前后端调用的接口）
@@ -20,8 +20,8 @@ Subway_defect_AI/
 │   ├── pipeline/                  # 两阶段推理管道（切片 → ROI → 检测 → WBF 融合）
 │   ├── train/                     # 训练模块（CLI + 多阶段管道 + 回调系统）
 │   ├── modules/                   # EMA / SimAM / ECA 注意力模块
-│   ├── models/                    # 模型 YAML 配置（4 个变体）
-│   ├── augmentations/             # 数据增强（隧道/日照/模糊/雨雾 + CopyPaste）
+│   ├── models/                    # 模型 YAML 配置（5 个变体, 推荐三尺度）
+│   ├── augmentations/             # 数据增强（6 种场景 + CopyPaste + 缺陷复制粘贴）
 │   ├── synthetic/                 # Inpainting 合成缺陷生成
 │   └── classes.py                 # 缺陷类别中央注册表（16 类，单一事实来源）
 │
@@ -35,17 +35,22 @@ Subway_defect_AI/
 │   ├── model/inference.yaml       # 推理参数（修改后重启服务即可生效）
 │   └── train/                     # 训练超参数（Legacy 三阶段 + Modern 五阶段）
 │
-├── scripts/                       # 数据集工具脚本
+├── scripts/                       # 数据集工具脚本 (16 个)
 │   ├── prepare_dataset.py         # 一键数据集准备
 │   ├── split_dataset.py           # 训练/验证集划分
-│   ├── generate_native_crops.py   # 原生分辨率 crop 生成
+│   ├── generate_native_crops.py   # 原生分辨率 crop (v2: 类别平衡 + 位置去偏置)
 │   ├── validate_dataset.py        # 数据集完整性校验
-│   ├── multi_source_dataset_builder.py  # 多源公开数据集构建器
-│   ├── multi_source_pretrain_yaml.py    # 多源预训练 YAML 生成器
+│   ├── multi_source_dataset_builder.py  # 多源公开数据集构建器 (v2: +SDD2+RSDDs)
+│   ├── multi_source_pretrain_yaml.py    # 多源预训练 YAML 生成器 (v2: 1A/1B 拆分)
 │   ├── create_defect_data_yaml.py       # 数据集 YAML 创建
 │   ├── fix_classes_txt.py               # classes.txt 修复
-│   ├── generate_scene_augmentations.py  # 场景增强生成
+│   ├── generate_scene_augmentations.py  # 场景增强 (v2: +震动+白平衡, 类别感知)
 │   ├── generate_synthetic_defects.py    # 合成缺陷生成
+│   ├── generate_defect_copy_paste.py    # ★ 缺陷感知 Copy-Paste (v2 新增)
+│   ├── collect_hard_negatives.py        # ★ 难负样本收集 (v2 新增)
+│   ├── calibrate_thresholds.py          # ★ 每类阈值校准 (v2 新增)
+│   ├── audit_labels.py                  # ★ 标注质量审计 (v2 新增)
+│   ├── train_pipeline.py                # ★ 统一训练管道 CLI
 │   └── setup_coco_from_autodl.py        # AutoDL COCO 数据集设置
 │
 ├── tests/                         # 测试套件（pytest, 773 用例）

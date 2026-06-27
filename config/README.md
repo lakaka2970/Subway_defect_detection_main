@@ -10,13 +10,14 @@ config/
 │   ├── warmup.yaml            # [LEGACY] C1 Head Warmup
 │   ├── full.yaml              # [LEGACY] C2 Full Training
 │   ├── finetune.yaml          # [LEGACY] C3 Fine-Tune
-│   └── pretrain/              # 统一训练阶段配置 (推荐)
-│       ├── stage1_public_pretrain.yaml     # Stage 1: 公开缺陷预训练 (生成)
-│       ├── stage2_domain_adapt.yaml        # Stage 2: 领域适配
-│       ├── stage3_main_training.yaml       # Stage 3: 主训练
-│       ├── stage4_short_finetune.yaml      # Stage 4: 短微调
-│       ├── stage5_hard_negative.yaml       # Stage 5: 难负样本 (可选)
-│       └── stage_p2_tiny_pretrain.yaml     # Stage P2: P2头预热 (可选, 生成)
+│   └── pretrain/              # 统一训练阶段配置 (推荐, v2 优化)
+│       ├── stage_p2_tiny_pretrain.yaml     # Stage P2: P2头预热 (可选, 生成)
+│       ├── stage1a_public_head.yaml        # Stage 1A: 公开缺陷 Head/Neck 预热 (生成)
+│       ├── stage1b_public_backbone.yaml    # Stage 1B: 公开缺陷 Backbone 适应 (生成)
+│       ├── stage2_domain_adapt.yaml        # Stage 2: 领域适配 (v2: 40ep)
+│       ├── stage3_main_training.yaml       # Stage 3: 主训练 (v2: 80ep, copy_paste=0.05)
+│       ├── stage4_short_finetune.yaml      # Stage 4: 短微调 (v2: 15ep, warmup=0)
+│       └── stage5_hard_negative.yaml       # Stage 5: 难负样本+阈值校准 (v2: 脚本已实现)
 ├── model/                     # 模型推理参数
 │   └── inference.yaml         # 推理 & 验证默认值
 └── README.md                  # 本文件
@@ -44,18 +45,26 @@ train-defect --data data/subway_crops/subway_crops.yaml \
 
 | 阶段 | 文件 | epochs | imgsz | 优化器 | lr0 | 关键特性 |
 |------|------|--------|-------|--------|-----|----------|
-| Stage 1 | `stage1_public_pretrain.yaml` | 120 | 1024 | AdamW | 0.001 | 公开缺陷预训练, generic_defect 单类 |
-| Stage 2 | `stage2_domain_adapt.yaml` | 50 | 1024 | AdamW | 0.001 | 冻结 backbone 60%, →7类接触网 |
-| Stage 3 | `stage3_main_training.yaml` | 120 | 1280 | AdamW | 0.0008 | 全解冻主训练, mosaic=0.2, patience=40 |
-| Stage 4 | `stage4_short_finetune.yaml` | 30 | 1280 | AdamW | 3e-5 | 短微调, patience=8, 每 epoch 保存 |
-| Stage 5 | `stage5_hard_negative.yaml` | 30 | 1280 | AdamW | 2e-5 | (可选) 难负样本+阈值校准 |
-| Stage P2 | `stage_p2_tiny_pretrain.yaml` | 80 | 1024 | AdamW | 0.001 | (可选) P2头预热, 仅P2模型 |
+| Stage P2 | `stage_p2_tiny_pretrain.yaml` | 80 | 1024 | AdamW | 0.001 | [消融实验] P2头预热 — 四尺度模型已证明更差, 不推荐 |
+| Stage 1A | `stage1a_public_head.yaml` | 40 | 1024 | AdamW | 0.001 | Neck/Head预热, freeze[0..10], gc10+neu+sdd2+rsdds |
+| Stage 1B | `stage1b_public_backbone.yaml` | 60 | 1024 | AdamW | 0.0003 | Backbone适应, freeze[0..5], 低LR |
+| Stage 2 | `stage2_domain_adapt.yaml` | 40 | 1024 | AdamW | 0.0008 | 1类→7类, freeze[0..7], cos_lr |
+| Stage 3 | `stage3_main_training.yaml` | 80 | 1280 | AdamW | 0.0005 | 全解冻, copy_paste=0.05, patience=28 |
+| Stage 4 | `stage4_short_finetune.yaml` | 15 | 1280 | AdamW | 1e-5 | 零增强, warmup=0, patience=5 |
+| Stage 5 | `stage5_hard_negative.yaml` | 20 | 1280 | AdamW | 2e-5 | (可选) 难负样本+阈值校准, warmup=0 |
 
 **关键特性**:
 - 每阶段可独立使用不同数据集 (`data`/`nc`/`names` 在 YAML 内指定)
-- AdamW 全程替代 SGD (自适应学习率)
-- 极轻增强 (mosaic≤0.2, 无 erasing/copy_paste) 保护小目标
+- AdamW + cos_lr 全程 (v2: 自适应学习率 + 余弦退火调度)
+- 极轻增强保护小目标 (mosaic≤0.15, erasing=0)
+- v2: 缺陷感知 Copy-Paste (Stage 3, 仅小目标)
+- v2: 类别感知场景增强 (震动模糊 + 白平衡偏移 + 少数类过采样)
+- v2: 图像切片类别平衡 (少数类额外 offset 变体)
+- v2: 位置去偏置 crop (--debiasing: 中心/偏中心/边缘/角落 系统性变化)
+- v2: 标注质量审计工具 (audit_labels.py — FP/FN 标记 + 人工审核辅助)
 - 每阶段产出可独立验证，问题可精确定位
+- v2: 完整 Stage 5 脚本链 (collect_hard_negatives → train → calibrate_thresholds)
+- P2 四尺度模型标注为 [消融实验] — 三尺度 YOLO11m-EMA-SimAM 为主线
 
 <details>
 <summary><b>Legacy C1/C2/C3 三阶段（向后兼容，不推荐）</b></summary>

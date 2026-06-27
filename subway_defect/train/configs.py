@@ -555,7 +555,7 @@ def load_inference_config() -> dict:
     Returns:
         Inference config dict (empty if file missing).
     """
-    return _load_yaml(_CONFIG_DIR / "model" / "inference.yaml")
+    return _safe_load_yaml(_CONFIG_DIR / "model" / "inference.yaml")
 
 
 def load_pretrain_config(stage_name: str) -> dict:
