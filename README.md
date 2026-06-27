@@ -77,14 +77,16 @@ pip install -e .
 
 ```bash
 # 车载端（单模型）
+# 权重路径: output/<训练时间>/stage_4/weights/best.pt
 subway-server --port 8001 \
-    --model output/<时间戳>/c3_finetune/weights/best.pt \
+    --model output/20260627_143052/stage_4/weights/best.pt \
     --mode onboard
 
 # 地面端（双 GPU WBF 融合）
+# GPU 0: 三尺度模型  GPU 1: 四尺度 P2 模型（单独训练）
 subway-server --port 8001 \
-    --model output/<时间戳>/c3_finetune/weights/best.pt \
-    --model_b output/<时间戳>_p2/c3_finetune/weights/best.pt \
+    --model output/20260627_143052/stage_4/weights/best.pt \
+    --model_b output/20260627_140000/stage_4/weights/best.pt \
     --mode ground
 ```
 
