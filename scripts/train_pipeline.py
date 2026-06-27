@@ -376,6 +376,7 @@ def _run_stage(
     batch: int,
     workers: int,
     pretrained: Optional[Path],
+    timestamp: str,
     nc_warning: str = "",
     dry_run: bool = False,
 ) -> bool:
@@ -385,6 +386,10 @@ def _run_stage(
     model_file = _MODEL_FILES[model_key]
     model_path = _MODELS_DIR / model_file
     output_weight = Path(stage["output"])
+
+    # Output layout: output/<timestamp>/<stage_name>/
+    run_dir = _PROJECT_ROOT / "output" / timestamp
+    stage_name = f"stage_{stage_id}"
 
     print()
     print("=" * 70)
@@ -418,8 +423,8 @@ def _run_stage(
     cfg["batch"] = batch
     cfg["workers"] = workers
     cfg["device"] = device
-    cfg["project"] = str(_PROJECT_ROOT / "output")
-    cfg["name"] = f"stage{stage_id}"
+    cfg["project"] = str(run_dir)
+    cfg["name"] = stage_name
 
     # ── Per-stage dataset resolution ──────────────────────────────
     dataset_keys = {"path", "train", "val", "nc", "names", "test"}
@@ -486,16 +491,14 @@ def _run_stage(
                      time.strftime("%H:%M:%S", time.gmtime(elapsed)))
 
         # Copy best.pt to designated output location
-        best_src = (
-            _PROJECT_ROOT / "output" / f"stage{stage_id}" / "weights" / "best.pt"
-        )
+        best_src = run_dir / stage_name / "weights" / "best.pt"
         if best_src.exists():
             output_weight.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(best_src, output_weight)
             logger.info("Saved: %s", output_weight)
 
             # ── Attempt per-class AP extraction ──────────────────
-            _log_per_class_metrics(stage_id, stage["name"])
+            _log_per_class_metrics(stage_id, stage["name"], timestamp)
             return True
         else:
             logger.error("best.pt not found at %s — training may have failed", best_src)
@@ -506,7 +509,7 @@ def _run_stage(
         return False
 
 
-def _log_per_class_metrics(stage_id: str, stage_name: str) -> None:
+def _log_per_class_metrics(stage_id: str, stage_name: str, timestamp: str) -> None:
     """Attempt to extract per-class AP metrics from the stage output directory.
 
     Looks for per-class results in the Ultralytics output CSV and logs a
@@ -514,7 +517,7 @@ def _log_per_class_metrics(stage_id: str, stage_name: str) -> None:
     """
     try:
         results_csv = (
-            _PROJECT_ROOT / "output" / f"stage{stage_id}" / "results.csv"
+            _PROJECT_ROOT / "output" / timestamp / f"stage_{stage_id}" / "results.csv"
         )
         if not results_csv.exists():
             logger.info("No results.csv for %s — skipping per-class summary", stage_name)
@@ -667,6 +670,10 @@ Examples:
     # ═════════════════════════════════════════════════════════════════════
     #  TRAINING LOOP
     # ═════════════════════════════════════════════════════════════════════
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    run_dir = _PROJECT_ROOT / "output" / timestamp
+    print(f"\n  Run directory: {run_dir}")
+
     stages_done: List[str] = []
     failed: List[str] = []
 
@@ -679,6 +686,7 @@ Examples:
             batch=batch,
             workers=workers,
             pretrained=pretrained,
+            timestamp=timestamp,
             nc_warning=nc_warning,
             dry_run=args.dry_run,
         )
@@ -704,6 +712,7 @@ Examples:
     print("=" * 70)
     if args.dry_run:
         print("  Mode:      DRY-RUN (no training executed)")
+    print(f"  Run dir:   {run_dir}")
     print(f"  Completed: {stages_done}")
     if failed:
         print(f"  Failed:    {failed}")
@@ -711,7 +720,7 @@ Examples:
     for sid in stage_ids:
         out = STAGE_DEFS[sid]["output"]
         exists = Path(out).exists()
-        marker = " ← EXISTS" if exists else " (not generated)"
+        marker = " (exists)" if exists else " (not generated)"
         label = "Required" if STAGE_DEFS[sid].get("required") else "Optional"
         print(f"    Stage {sid} [{label}]: {out}{marker}")
     print("=" * 70)
