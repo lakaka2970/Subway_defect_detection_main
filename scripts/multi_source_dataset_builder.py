@@ -1465,18 +1465,24 @@ def convert_rsdds(
 ) -> bool:
     """Convert RSDDs (Rail Surface Defect Dataset) to YOLO format.
 
-    Expected structure::
+    Supports two layout variants:
+
+    **Format A — preprocessed (Baidu Pan / IEEE DataPort):**
 
         src_dir/
         ├── data1/                      # Type-I (express rail, 160×1000 px)
-        │   ├── train/
-        │   │   ├── images/*.jpg        # defect images
-        │   │   └── masks/*.png         # binary masks (same stem)
-        │   └── test/
-        │       ├── images/*.jpg
-        │       └── masks/*.png
+        │   ├── train/images/*.jpg + masks/*.png
+        │   └── test/images/*.jpg + masks/*.png
         └── data2/                      # Type-II (heavy rail, 55×1250 px)
-            ├── train/
+            ├── train/images/*.jpg + masks/*.png
+            └── test/images/*.jpg + masks/*.png
+
+    **Format B — original GitHub (neu-rail-rsdds/rsdds):**
+
+        src_dir/
+        ├── images/*.jpg                # colour images (113, BMP→JPG)
+        ├── masks/*.png                 # binary defect masks (same stem)
+        └── Ground Truth/*.png (alt)    # alternative mask location
             │   ├── images/*.jpg
             │   └── masks/*.png
             └── test/
@@ -1497,62 +1503,119 @@ def convert_rsdds(
         print(fail(f"[{key}] opencv-python required for RSDDs conversion"))
         return False
 
-    # Find data1 / data2 subdirectories
+    # ── Detect format: Format A (data{1,2}/...) vs Format B (flat images/ + masks/) ──
     data_dirs = sorted([
         d for d in src_dir.iterdir()
         if d.is_dir() and d.name.startswith("data") and not d.name.startswith(".")
     ])
-    if not data_dirs:
-        print(fail(f"[{key}] No data1/data2/... directories found under {src_dir}"))
-        return False
 
-    print(info(f"[{key}] Found {len(data_dirs)} subset(s): {[d.name for d in data_dirs]}"))
-
-    # Collect (image, mask) pairs from all subsets
-    # Group by subset (data1/data2) for split to prevent leakage
     subset_pairs: Dict[str, List[Tuple[Path, Optional[Path]]]] = defaultdict(list)
     total_pairs = 0
 
-    for data_dir in data_dirs:
-        subset_name = data_dir.name
-        for split_tag in ("train", "test"):
-            img_dir = data_dir / split_tag / "images"
-            mask_dir = data_dir / split_tag / "masks"
+    if data_dirs:
+        # ── Format A: data{1,2}/{train,test}/images/ + masks/ ──
+        print(info(f"[{key}] Format A — {len(data_dirs)} subset(s): "
+                   f"{[d.name for d in data_dirs]}"))
 
-            if not img_dir.is_dir():
-                continue
+        for data_dir in data_dirs:
+            subset_name = data_dir.name
+            for split_tag in ("train", "test"):
+                img_dir = data_dir / split_tag / "images"
+                mask_dir = data_dir / split_tag / "masks"
 
-            img_exts = ("*.jpg", "*.jpeg", "*.png", "*.bmp", "*.JPG", "*.PNG")
-            for ext in img_exts:
-                for img_path in sorted(img_dir.glob(ext)):
-                    # Find matching mask
+                if not img_dir.is_dir():
+                    continue
+
+                img_exts = ("*.jpg", "*.jpeg", "*.png", "*.bmp", "*.JPG", "*.PNG")
+                for ext in img_exts:
+                    for img_path in sorted(img_dir.glob(ext)):
+                        mask_path = mask_dir / f"{img_path.stem}.png"
+                        if not mask_path.exists():
+                            for m_ext in (".jpg", ".bmp"):
+                                alt = mask_dir / f"{img_path.stem}{m_ext}"
+                                if alt.exists():
+                                    mask_path = alt
+                                    break
+                        subset_pairs[subset_name].append(
+                            (img_path, mask_path if mask_path.exists() else None)
+                        )
+                        total_pairs += 1
+
+        # Split by subset (data1/data2) to prevent leakage
+        subset_names = sorted(subset_pairs.keys())
+        random.seed(SEED)
+        random.shuffle(subset_names)
+        split_idx = max(1, int(len(subset_names) * (1 - val_ratio)))
+        train_subsets = set(subset_names[:split_idx])
+        val_subsets = set(subset_names[split_idx:])
+        use_subset_split = True
+
+    else:
+        # ── Format B: flat images/ + masks/ (original GitHub structure) ──
+        img_dir = src_dir / "images"
+        mask_candidates = [
+            src_dir / "masks",
+            src_dir / "Ground Truth",
+            src_dir / "ground_truth" / "Ground Truth",
+        ]
+        mask_dir = None
+        for mc in mask_candidates:
+            if mc.is_dir():
+                mask_dir = mc
+                break
+
+        if not img_dir.is_dir():
+            # Check for rsdds_flat/images/ (post-extraction reorganised)
+            img_dir = src_dir / "rsdds_flat" / "images"
+            for mc in [
+                src_dir / "rsdds_flat" / "masks",
+                src_dir / "ground_truth" / "Ground Truth",
+            ]:
+                if mc.is_dir():
+                    mask_dir = mc
+                    break
+
+        if not img_dir.is_dir():
+            print(fail(f"[{key}] No images/ directory found — "
+                       f"expected images/ + masks/ or data{1,2}/..."))
+            return False
+
+        print(info(f"[{key}] Format B — flat images/ + masks/ structure"))
+
+        img_exts = ("*.jpg", "*.jpeg", "*.png", "*.bmp", "*.JPG", "*.PNG")
+        for ext in img_exts:
+            for img_path in sorted(img_dir.glob(ext)):
+                mask_path = None
+                if mask_dir is not None:
                     mask_path = mask_dir / f"{img_path.stem}.png"
                     if not mask_path.exists():
-                        # Try alternative extensions
                         for m_ext in (".jpg", ".bmp"):
                             alt = mask_dir / f"{img_path.stem}{m_ext}"
                             if alt.exists():
                                 mask_path = alt
                                 break
-                    subset_pairs[subset_name].append(
-                        (img_path, mask_path if mask_path.exists() else None)
-                    )
-                    total_pairs += 1
+                subset_pairs["rsdds"].append(
+                    (img_path, mask_path if (mask_path and mask_path.exists()) else None)
+                )
+                total_pairs += 1
+
+        # For flat format, split individual images randomly
+        shuffled = sorted(subset_pairs.get("rsdds", []),
+                          key=lambda x: x[0].stem)
+        random.seed(SEED)
+        random.shuffle(shuffled)
+        split_idx = max(1, int(len(shuffled) * (1 - val_ratio)))
+        subset_pairs["_train"] = shuffled[:split_idx]
+        subset_pairs["_val"] = shuffled[split_idx:]
+        train_subsets = {"_train"}
+        val_subsets = {"_val"}
+        use_subset_split = True
 
     if total_pairs == 0:
         print(fail(f"[{key}] No defect image/mask pairs found"))
         return False
 
-    print(info(f"[{key}] Found {total_pairs} defect image/mask pairs "
-               f"across {len(subset_pairs)} subset(s)"))
-
-    # Split by subset (data1/data2) to prevent leakage
-    subset_names = sorted(subset_pairs.keys())
-    random.seed(SEED)
-    random.shuffle(subset_names)
-    split_idx = max(1, int(len(subset_names) * (1 - val_ratio)))
-    train_subsets = set(subset_names[:split_idx])
-    val_subsets = set(subset_names[split_idx:])
+    print(info(f"[{key}] Found {total_pairs} defect image/mask pairs"))
 
     for split, sub_set in (("train", train_subsets), ("val", val_subsets)):
         out_img_dir = output_dir / "images" / split
@@ -2273,6 +2336,15 @@ class DatasetBuilder:
 
         # Phase 2: Download missing
         sources = self.download_missing(found)
+
+        # Phase 2.5: Check for manually-downloaded datasets in _downloads/
+        for key, spec in self._enabled_specs().items():
+            if key in sources:
+                continue  # already found
+            manual_dir = self.download_dir / key
+            if manual_dir.exists() and any(manual_dir.iterdir()):
+                print(ok(f"[{key}] Found manually downloaded data at {manual_dir}"))
+                sources[key] = manual_dir
 
         # Phase 3: Convert
         outputs = self.convert_all(sources)
