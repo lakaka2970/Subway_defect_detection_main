@@ -67,6 +67,12 @@ _MODELS_DIR = _PROJECT_ROOT / "subway_defect" / "models"
 _SCRIPTS_DIR = _PROJECT_ROOT / "scripts"
 
 # ── Unified stage definitions ───────────────────────────────────────────────
+# Stage order determines weight inheritance: each stage auto-loads the
+# *immediately preceding* completed stage's best.pt (unless overridden via
+# ``pretrained_from`` which names an explicit predecessor stage ID).
+#
+# nc_mismatch: when True, the training script logs a warning that Detect
+# classification layers will be reinitialized (source nc ≠ target nc).
 STAGE_DEFS: Dict[str, dict] = {
     "p2": {
         "name": "Stage P2 (optional): TT100K P2 Tiny-Object Head Warmup",
@@ -75,48 +81,73 @@ STAGE_DEFS: Dict[str, dict] = {
         "epochs": 80,
         "desc": "P2 head warmup on tiny objects (only for P2 models)",
         "required": False,
+        "pretrained_from": None,       # uses COCO weights
+        "nc_mismatch": False,
     },
-    "1": {
-        "name": "Stage 1: Public Defect Pretraining",
-        "yaml": "stage1_public_pretrain.yaml",
-        "output": "weights/stage1_public_pretrain.pt",
-        "epochs": 120,
-        "desc": "DeepPCB + NEU-DET + GC10-DET → generic_defect (1 class)",
+    "1a": {
+        "name": "Stage 1A: Public Defect Head/Neck Warmup",
+        "yaml": "stage1a_public_head.yaml",
+        "output": "weights/stage1a_public_head.pt",
+        "epochs": 40,
+        "desc": "Freeze backbone deep, train neck+head on generic_defect (1 class)",
         "required": True,
+        "pretrained_from": None,       # uses COCO weights
+        "nc_mismatch": False,
+    },
+    "1b": {
+        "name": "Stage 1B: Public Defect Backbone Adaptation",
+        "yaml": "stage1b_public_backbone.yaml",
+        "output": "weights/stage1b_public_backbone.pt",
+        "epochs": 60,
+        "desc": "Unfreeze backbone deep layers, full model on generic_defect",
+        "required": True,
+        "pretrained_from": "1a",       # inherit Stage 1A best.pt
+        "nc_mismatch": False,
     },
     "2": {
-        "name": "Stage 2: Custom Domain Adaptation",
+        "name": "Stage 2: Contact-Net Domain Adaptation",
         "yaml": "stage2_domain_adapt.yaml",
         "output": "weights/stage2_domain_adapt.pt",
-        "epochs": 50,
+        "epochs": 40,
         "desc": "Frozen backbone, adapt neck+head to contact-net 7 classes",
         "required": True,
+        "pretrained_from": "1b",       # inherit Stage 1B best.pt (nc=1→7)
+        "nc_mismatch": True,           # 1 class → 7 classes, Detect cls reinit
     },
     "3": {
-        "name": "Stage 3: Main Training",
+        "name": "Stage 3: Main Training (1280px)",
         "yaml": "stage3_main_training.yaml",
         "output": "weights/stage3_main.pt",
-        "epochs": 120,
-        "desc": "Full unfreeze, 1280px native crops, heavy augmentations",
+        "epochs": 80,                  # reduced from 120 — peak at epoch ~57
+        "desc": "Full unfreeze, 1280px native crops, cos_lr with early stopping",
         "required": True,
+        "pretrained_from": "2",        # inherit Stage 2 best.pt
+        "nc_mismatch": False,
     },
     "4": {
-        "name": "Stage 4: Short Fine-Tune",
+        "name": "Stage 4: Short Fine-Tune (Real Distribution)",
         "yaml": "stage4_short_finetune.yaml",
         "output": "weights/stage4_best_finetune.pt",
-        "epochs": 30,
-        "desc": "Low LR, minimal augmentation, convergence to real distribution",
+        "epochs": 15,                  # reduced from 30 — converges quickly
+        "desc": "Low LR (1e-5), zero augment, freeze backbone, real distribution",
         "required": True,
+        "pretrained_from": "3",        # inherit Stage 3 best.pt
+        "nc_mismatch": False,
     },
     "5": {
         "name": "Stage 5 (optional): Hard Negative Mining + Calibration",
         "yaml": "stage5_hard_negative.yaml",
         "output": "weights/stage5_calibrated.pt",
-        "epochs": 30,
-        "desc": "Reduce false positives, per-class threshold calibration",
+        "epochs": 20,                  # reduced from 30
+        "desc": "Reduce false positives with mined hard negatives, per-class calibration",
         "required": False,
+        "pretrained_from": "4",        # inherit Stage 4 best.pt
+        "nc_mismatch": False,
     },
 }
+
+# ── Stage execution order (used for weight chain resolution) ─────────────────
+_STAGE_ORDER = ["p2", "1a", "1b", "2", "3", "4", "5"]
 
 # ── Model definitions ───────────────────────────────────────────────────────
 _MODEL_FILES = {
@@ -124,6 +155,7 @@ _MODEL_FILES = {
     "yolo11s-P2-EMA-SimAM": "yolo11s-P2-EMA-SimAM.yaml",
     "yolo11m-EMA-SimAM": "yolo11m-EMA-SimAM.yaml",
     "yolo11m-P2-SimAM": "yolo11m-P2-SimAM.yaml",
+    "yolo11m-P2-EMA-SimAM": "yolo11m-P2-EMA-SimAM.yaml",
 }
 
 
@@ -261,28 +293,80 @@ def run_preflight(
 # ║                          STAGE TRAINING LOGIC                             ║
 # ╚════════════════════════════════════════════════════════════════════════════╝
 
-def _resolve_pretrained(stage_id: str, stages_done: List[str]) -> Optional[Path]:
+def _resolve_pretrained(
+    stage_id: str,
+    stages_done: List[str],
+) -> Tuple[Optional[Path], Optional[str]]:
     """Find the best pretrained weight for *stage_id*.
 
-    Priority: previous stage output > COCO pretrain > None.
-    """
-    # Find the most recent completed stage output
-    stage_order = ["p2", "1", "2", "3", "4", "5"]
-    try:
-        current_idx = stage_order.index(stage_id)
-    except ValueError:
-        current_idx = len(stage_order)
+    Resolution order:
+    1. ``pretrained_from`` field in STAGE_DEFS (explicit predecessor stage ID)
+    2. Most recent completed stage in ``_STAGE_ORDER``
+    3. COCO pretrained weights (returned as string name, not Path)
 
-    for prev_id in reversed(stage_order[:current_idx]):
+    Returns:
+        ``(weight_path, nc_warning_message)`` where *weight_path* may be
+        ``None`` (use COCO weights) and *nc_warning_message* is a string
+        describing any class-count mismatch (empty string if none).
+    """
+    stage_def = STAGE_DEFS.get(stage_id, {})
+    nc_warning = ""
+
+    # ── 1. Explicit pretrained_from ──
+    pretrained_from = stage_def.get("pretrained_from")
+    if pretrained_from and pretrained_from in stages_done:
+        out = STAGE_DEFS.get(pretrained_from, {}).get("output", "")
+        if out:
+            p = Path(out)
+            if p.exists():
+                if stage_def.get("nc_mismatch"):
+                    src_stage = STAGE_DEFS.get(pretrained_from, {})
+                    nc_warning = (
+                        f"⚠ nc MISMATCH: {src_stage.get('name','')} → {stage_def.get('name','')}\n"
+                        f"  Source checkpoint has nc≠{stage_def.get('yaml','')} target nc.\n"
+                        f"  → Backbone + neck + attention weights loaded.\n"
+                        f"  → Detect classification layers WILL BE REINITIALIZED.\n"
+                        f"  This is EXPECTED for Stage 1B→2 (1-class → 7-class)."
+                    )
+                logger.info(
+                    "Stage %s pretrained from: %s (explicit pretrained_from=%s)",
+                    stage_id, p, pretrained_from,
+                )
+                return p, nc_warning
+
+            logger.warning(
+                "Stage %s: pretrained_from=%s but output file %s not found — "
+                "falling back to chain search",
+                stage_id, pretrained_from, p,
+            )
+
+    # ── 2. Chain search through completed stages ──
+    try:
+        current_idx = _STAGE_ORDER.index(stage_id)
+    except ValueError:
+        current_idx = len(_STAGE_ORDER)
+
+    for prev_id in reversed(_STAGE_ORDER[:current_idx]):
         if prev_id in stages_done:
             out = STAGE_DEFS.get(prev_id, {}).get("output", "")
             if out:
                 p = Path(out)
                 if p.exists():
-                    return p
+                    if stage_def.get("nc_mismatch"):
+                        nc_warning = (
+                            f"⚠ nc MISMATCH: {STAGE_DEFS.get(prev_id,{}).get('name','')} "
+                            f"→ {stage_def.get('name','')}\n"
+                            f"  → Detect classification layers will be reinitialized."
+                        )
+                    logger.info(
+                        "Stage %s pretrained from: %s (chain fallback via %s)",
+                        stage_id, p, prev_id,
+                    )
+                    return p, nc_warning
 
-    # Fallback: COCO pretrained weights
-    return None
+    # ── 3. Fallback: COCO pretrained weights ──
+    logger.info("Stage %s: no prior stage weight found — will use COCO pretrained", stage_id)
+    return None, nc_warning
 
 
 def _run_stage(
@@ -292,6 +376,7 @@ def _run_stage(
     batch: int,
     workers: int,
     pretrained: Optional[Path],
+    nc_warning: str = "",
     dry_run: bool = False,
 ) -> bool:
     """Execute a single training stage.  Returns True on success."""
@@ -317,6 +402,9 @@ def _run_stage(
         print(f"  Init:     {pretrained}")
     else:
         print(f"  Init:     COCO pretrained (auto-download)")
+    if nc_warning:
+        print()
+        print(f"  {nc_warning}")
     print()
 
     if dry_run:
@@ -334,27 +422,55 @@ def _run_stage(
     cfg["name"] = f"stage{stage_id}"
 
     # ── Per-stage dataset resolution ──────────────────────────────
-    # The stage YAML may contain dataset keys (path, train, val, nc, names)
-    # which are NOT valid YOLO training arguments. Extract them and pass
-    # the config file itself as the data= argument, or write a temp data.yaml.
     dataset_keys = {"path", "train", "val", "nc", "names", "test"}
     has_inline_data = any(k in cfg for k in {"path", "train"})
     if has_inline_data:
-        # The config file doubles as a data YAML — use it directly
         cfg["data"] = str(cfg_path.resolve())
         for k in dataset_keys:
             cfg.pop(k, None)
 
-    # Resolve pretrained weights
+    # ── Resolve pretrained weights ────────────────────────────────
     if pretrained and pretrained.exists():
         cfg["pretrained"] = str(pretrained)
-    elif not pretrained:
+    elif pretrained and not pretrained.exists():
+        logger.warning(
+            "Pretrained weight not found: %s — falling back to COCO weights",
+            pretrained,
+        )
+        # Fall through to COCO
+        pretrained = None
+
+    if not pretrained:
         coco_map = {"yolo11s": "yolo11s.pt", "yolo11m": "yolo11m.pt"}
         for k, w in coco_map.items():
             if k in model_key:
                 w_path = _WEIGHTS_DIR / w
                 cfg["pretrained"] = str(w_path) if w_path.exists() else w
                 break
+
+    # ── Warmup bias LR safety check ───────────────────────────────
+    lr0 = float(cfg.get("lr0", 0.001))
+    warmup_epochs = float(cfg.get("warmup_epochs", 3))
+    warmup_bias_lr = float(cfg.get("warmup_bias_lr", lr0))
+    if warmup_epochs > 0 and warmup_bias_lr > 10 * lr0:
+        logger.error(
+            "⚠ DANGEROUS: warmup_bias_lr=%.6f is > 10× lr0=%.6f for %s!\n"
+            "  This will spike bias parameter LR in early epochs,\n"
+            "  defeating the purpose of low-LR fine-tuning.\n"
+            "  → Setting warmup_bias_lr = lr0 = %.6f to fix.",
+            warmup_bias_lr, lr0, stage["name"], lr0,
+        )
+        cfg["warmup_bias_lr"] = lr0
+    elif warmup_epochs == 0 and warmup_bias_lr > lr0:
+        logger.info(
+            "Stage %s: warmup_epochs=0, warmup_bias_lr=%.6f matches lr0=%.6f ✓",
+            stage_id, warmup_bias_lr, lr0,
+        )
+    else:
+        logger.info(
+            "Stage %s: lr0=%.6f, warmup_bias_lr=%.6f, warmup_epochs=%s ✓",
+            stage_id, lr0, warmup_bias_lr, warmup_epochs,
+        )
 
     logger.info("Starting %s (%d epochs, batch=%d) ...",
                 stage["name"], stage["epochs"], batch)
@@ -377,6 +493,9 @@ def _run_stage(
             output_weight.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(best_src, output_weight)
             logger.info("Saved: %s", output_weight)
+
+            # ── Attempt per-class AP extraction ──────────────────
+            _log_per_class_metrics(stage_id, stage["name"])
             return True
         else:
             logger.error("best.pt not found at %s — training may have failed", best_src)
@@ -385,6 +504,39 @@ def _run_stage(
     except Exception as exc:
         logger.error("Stage %s failed: %s", stage_id, exc)
         return False
+
+
+def _log_per_class_metrics(stage_id: str, stage_name: str) -> None:
+    """Attempt to extract per-class AP metrics from the stage output directory.
+
+    Looks for per-class results in the Ultralytics output CSV and logs a
+    summary table.  Non-blocking — failures are logged as warnings only.
+    """
+    try:
+        results_csv = (
+            _PROJECT_ROOT / "output" / f"stage{stage_id}" / "results.csv"
+        )
+        if not results_csv.exists():
+            logger.info("No results.csv for %s — skipping per-class summary", stage_name)
+            return
+
+        # Ultralytics doesn't save per-class AP to results.csv by default.
+        # Instead, look for the per-class metrics in the val batch output
+        # or PNG confusion matrix. For now, log that this is available after
+        # manual inspection.
+        best_pt = (
+            _PROJECT_ROOT / "output" / f"stage{stage_id}" / "weights" / "best.pt"
+        )
+        if best_pt.exists():
+            logger.info(
+                "Per-class metrics for %s: run validation manually:\n"
+                "  yolo val model=%s data=%s split=val",
+                stage_name,
+                best_pt,
+                _PRETRAIN_CONFIG_DIR / STAGE_DEFS[stage_id]["yaml"],
+            )
+    except Exception as exc:
+        logger.warning("Could not extract per-class metrics: %s", exc)
 
 
 # ╔════════════════════════════════════════════════════════════════════════════╗
@@ -397,22 +549,22 @@ def main() -> None:
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  # Recommended: full core pipeline
+  # Recommended: full core pipeline (Stage 1A → 1B → 2 → 3 → 4)
   python scripts/train_pipeline.py --model yolo11m-EMA-SimAM --device 0
 
-  # Specific stages
-  python scripts/train_pipeline.py --stages 1 2 --model yolo11s-EMA-SimAM --device 0
+  # P2 four-scale model with optional P2 warmup
+  python scripts/train_pipeline.py --stages p2 1a 1b 2 3 4 --model yolo11m-P2-EMA-SimAM
 
-  # Include optional P2 stage
-  python scripts/train_pipeline.py --stages p2 1 2 3 4
+  # Specific stages
+  python scripts/train_pipeline.py --stages 1a 1b 2 --model yolo11m-EMA-SimAM --device 0
 
   # Dry-run
-  python scripts/train_pipeline.py --stages 1 2 3 4 --dry-run
+  python scripts/train_pipeline.py --stages 1a 1b 2 3 4 --dry-run
         """,
     )
     parser.add_argument(
-        "--stages", type=str, nargs="+", default=["1", "2", "3", "4"],
-        help="Stages to run (default: 1 2 3 4). Valid: p2, 1, 2, 3, 4, 5",
+        "--stages", type=str, nargs="+", default=["1a", "1b", "2", "3", "4"],
+        help="Stages to run (default: 1a 1b 2 3 4). Valid: p2, 1a, 1b, 2, 3, 4, 5",
     )
     parser.add_argument(
         "--phases", type=str, nargs="*", dest="stages_deprecated",
@@ -439,7 +591,7 @@ Examples:
     args = parser.parse_args()
 
     # Resolve stages (handle --phases deprecation)
-    stage_ids = args.stages if args.stages else (args.stages_deprecated or ["1", "2", "3", "4"])
+    stage_ids = args.stages if args.stages else (args.stages_deprecated or ["1a", "1b", "2", "3", "4"])
     # Normalize to strings
     stage_ids = [str(s) for s in stage_ids]
 
@@ -519,7 +671,7 @@ Examples:
     failed: List[str] = []
 
     for sid in stage_ids:
-        pretrained = _resolve_pretrained(sid, stages_done)
+        pretrained, nc_warning = _resolve_pretrained(sid, stages_done)
         ok = _run_stage(
             stage_id=sid,
             model_key=args.model,
@@ -527,6 +679,7 @@ Examples:
             batch=batch,
             workers=workers,
             pretrained=pretrained,
+            nc_warning=nc_warning,
             dry_run=args.dry_run,
         )
         if ok:

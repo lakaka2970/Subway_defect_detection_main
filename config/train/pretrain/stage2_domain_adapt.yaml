@@ -1,18 +1,21 @@
 # ============================================================================
-# Stage 2: Custom Domain Adaptation (unified training pipeline)
+# Stage 2: Custom Domain Adaptation (unified training pipeline v2)
 # ============================================================================
 # Migrated from: stage1_neck_head_warmup.yaml, Phase 4, S1, C1
 #
 # 目标: 从公开缺陷域 (generic_defect) 迁移到接触网 7 类
-# 初始化: Stage 1 best.pt
+# 初始化: Stage 1B best.pt (nc=1 → nc=7, Detect cls layers reinitialized)
 # 数据: subway_crops (接触网缺陷, 7 类)
-# 输出: stage2_domain_adapt/weights/best.pt
+# 输出: weights/stage2_domain_adapt.pt
 #
-# 与 legacy C1 的区别:
-#   - 不仅训练 head, 还训练 neck + attention (freeze 更少)
-#   - AdamW 替代 SGD
-#   - 极轻增强 (mosaic≤0.1, 无 erasing/copy_paste)
-#   - 50 epochs (neck 收敛快)
+# v2 changes (2026-06-27):
+#   - cos_lr: false → true (smooth domain shift convergence)
+#   - lrf: 1.0 → 0.1 (gentler LR decay)
+#   - epochs: 50 → 40 (converges faster with pretrained Stage 1B)
+#   - lr0: 0.001 → 0.0008 (less aggressive, backbone is pretrained)
+#   - warmup_bias_lr: 0.1 → 0.0008 (matched to lr0)
+#   - patience: 18 (auto early stop)
+#   - mosaic: 0.2 → 0.1 (lighter augmentation)
 # ============================================================================
 
 # ── 数据集 ──
@@ -20,36 +23,36 @@ data: data/subway_crops/subway_crops.yaml
 nc: 7
 names: ["VHBNM", "VHBNL", "SVHBNM", "SVHBNL", "SVHTNL", "CBHPM", "CBVPM"]
 
-epochs: 50
+epochs: 40
 imgsz: 1024
 batch: 16
 optimizer: AdamW
-lr0: 0.001
-lrf: 1.0
+lr0: 0.0008
+lrf: 0.1
 momentum: 0.937
 weight_decay: 0.0005
 warmup_epochs: 3
 warmup_momentum: 0.8
-warmup_bias_lr: 0.1
-cos_lr: false
+warmup_bias_lr: 0.0008
+cos_lr: true
+patience: 18
 
-# ── 数据增强 (轻量 — neck/head warmup 以收敛为主) ──
-mosaic: 0.2
+# ── 数据增强 (轻量 — neck/head adaptation with pretrained backbone) ──
+mosaic: 0.1
 mixup: 0.0
 copy_paste: 0.0
 hsv_h: 0.015
 hsv_s: 0.5
-hsv_v: 0.5
+hsv_v: 0.6
 degrees: 3.0
-translate: 0.1
+translate: 0.10
 scale: 0.4
-shear: 1.0
-perspective: 0.0
+shear: 0.5
+perspective: 0.0001
 flipud: 0.0
 fliplr: 0.5
 close_mosaic: 0
 erasing: 0.0
-auto_augment: randaugment
 
-# ── 冻结 backbone 前 60% 层, 训练 neck + P2/P3/P4/P5 + attention ──
+# ── 冻结 backbone 前 60% 层, 训练 neck + attention + head ──
 freeze: [0, 1, 2, 3, 4, 5, 6, 7]

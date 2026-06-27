@@ -171,9 +171,13 @@ If you are NOT using a P2 model, skip this stage.
 
 
 def generate_stage1_public_pretrain(root: Path, dry_run: bool = False) -> Optional[Path]:
-    """Stage 1: Public industrial defect pretraining (generic_defect).
+    """Stage 1 (Legacy): Single-stage public defect pretraining (120 epochs).
 
-    Merges DeepPCB + NEU-DET + GC10-DET + optional Insulator Defect.
+    .. deprecated::
+        Prefer the two-phase approach: :func:`generate_stage1a_public_head`
+        followed by :func:`generate_stage1b_public_backbone`.
+
+    Kept for backward compatibility and for users who want a simpler pipeline.
     """
     mixed_dir = root / "mixed_pretrain"
     data_yaml = mixed_dir / "data.yaml"
@@ -197,18 +201,15 @@ def generate_stage1_public_pretrain(root: Path, dry_run: bool = False) -> Option
         return None
 
     header = """\
-Stage 1: Public Industrial Defect Pretraining
-=============================================
-Target: Let backbone/neck/P2/P3 learn industrial anomaly textures.
-Init: stage_p2_tiny_pretrain.pt (if P2 model) or COCO yolo11s.pt.
+Stage 1 (Legacy): Public Industrial Defect Pretraining
+======================================================
+Target: Let backbone/neck learn industrial anomaly textures (single stage).
+Init: COCO yolo11m.pt.
 Datasets: DeepPCB + NEU-DET + GC10-DET + optional Insulator.
-Classes: 1 (generic_defect) — model learns "where is the anomaly", not "what kind".
+Classes: 1 (generic_defect).
 
-Training strategy:
-  - First 10 epochs: freeze backbone first half, train neck + head only.
-  - After epoch 10: unfreeze all, lower LR for backbone.
+Note: Prefer Stage 1A + 1B for better weight inheritance to Stage 2.
 Output: weights/stage1_public_pretrain.pt.
-Acceptance: mAP50 doesn't need to be extreme; focus on training stability and P2/P3 effectiveness.
 """
 
     if data_yaml.exists():
@@ -274,6 +275,250 @@ Acceptance: mAP50 doesn't need to be extreme; focus on training stability and P2
     return out_path
 
 
+def generate_stage1a_public_head(root: Path, dry_run: bool = False) -> Optional[Path]:
+    """Stage 1A: Public defect neck/head warmup — freeze backbone deep.
+
+    Trains only neck + attention modules + detection head on generic_defect
+    (single class). Backbone stays frozen (layers 0-10) to preserve COCO
+    features while neck/head learn industrial anomaly textures.
+
+    Output feeds into Stage 1B (backbone adaptation).
+    """
+    mixed_dir = root / "mixed_pretrain"
+    data_yaml = mixed_dir / "data.yaml"
+
+    public_dir = root / "public"
+    train_paths: List[str] = []
+    val_paths: List[str] = []
+
+    priority_order = ["deeppcb", "gc10_det", "neu_det", "insulator_defect"]
+    for key in priority_order:
+        ds_dir = public_dir / key
+        train_p = ds_dir / "images" / "train"
+        val_p = ds_dir / "images" / "val"
+        if train_p.is_dir():
+            train_paths.append(str(train_p.resolve()))
+        if val_p.is_dir():
+            val_paths.append(str(val_p.resolve()))
+
+    if not train_paths:
+        print(f"  [SKIP] Stage 1A: No public datasets found under {public_dir}")
+        return None
+
+    header = """\
+Stage 1A: Public Defect Neck/Head Warmup
+========================================
+Target: Train neck + attention + detection head on generic_defect (1 class).
+Init: COCO yolo11m.pt (backbone frozen deep — layers 0-10).
+Datasets: DeepPCB + NEU-DET + GC10-DET.
+Classes: 1 (generic_defect).
+
+Strategy:
+  - Freeze all backbone layers → neck/head learn industrial anomaly textures.
+  - AdamW with cos_lr for smooth convergence.
+  - mosaic=0.2 for mild augmentation to bridge domain gap.
+  - patience=20 to stop early when neck/head converge.
+
+Output: weights/stage1a_public_head.pt.
+Next:  Stage 1B (unfreeze backbone deep layers, continue on generic_defect).
+"""
+
+    if data_yaml.exists():
+        config = {
+            "path": str(mixed_dir.resolve()),
+            "train": "images/train",
+            "val": "images/val",
+            "nc": 1,
+            "names": ["generic_defect"],
+            "epochs": 40,
+            "imgsz": 1024,
+            "batch": 16,
+            "optimizer": "AdamW",
+            "lr0": 0.001,
+            "lrf": 0.05,
+            "cos_lr": True,
+            "weight_decay": 0.0005,
+            "warmup_epochs": 3,
+            "warmup_bias_lr": 0.001,
+            "mosaic": 0.2,
+            "mixup": 0.0,
+            "copy_paste": 0.0,
+            "erasing": 0.0,
+            "hsv_h": 0.015,
+            "hsv_s": 0.5,
+            "hsv_v": 0.5,
+            "degrees": 3.0,
+            "translate": 0.1,
+            "scale": 0.6,
+            "shear": 0.5,
+            "perspective": 0.0001,
+            "close_mosaic": 15,
+            "patience": 20,
+            "freeze": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
+        }
+    else:
+        if not val_paths:
+            val_paths = train_paths
+        config = {
+            "train": train_paths,
+            "val": val_paths[:1] if val_paths else train_paths[:1],
+            "nc": 1,
+            "names": ["generic_defect"],
+            "epochs": 40,
+            "imgsz": 1024,
+            "batch": 16,
+            "optimizer": "AdamW",
+            "lr0": 0.001,
+            "lrf": 0.05,
+            "cos_lr": True,
+            "weight_decay": 0.0005,
+            "warmup_epochs": 3,
+            "warmup_bias_lr": 0.001,
+            "mosaic": 0.2,
+            "mixup": 0.0,
+            "copy_paste": 0.0,
+            "erasing": 0.0,
+            "hsv_h": 0.015,
+            "hsv_s": 0.5,
+            "hsv_v": 0.5,
+            "degrees": 3.0,
+            "translate": 0.1,
+            "scale": 0.6,
+            "shear": 0.5,
+            "perspective": 0.0001,
+            "close_mosaic": 15,
+            "patience": 20,
+            "freeze": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
+        }
+
+    out_path = CONFIG_OUTPUT_DIR / "stage1a_public_head.yaml"
+    _write_yaml(out_path, config, header=header, dry_run=dry_run)
+    return out_path
+
+
+def generate_stage1b_public_backbone(root: Path, dry_run: bool = False) -> Optional[Path]:
+    """Stage 1B: Public defect backbone adaptation — unfreeze deep backbone.
+
+    Continues from Stage 1A best.pt. Unfreezes backbone deep layers (6-10)
+    while keeping early layers (0-5) frozen. This lets the backbone's deep
+    layers absorb industrial anomaly textures without destroying low-level
+    COCO features.
+
+    Uses lower LR (0.0003) to avoid catastrophic forgetting in the neck/head.
+    """
+    mixed_dir = root / "mixed_pretrain"
+    data_yaml = mixed_dir / "data.yaml"
+
+    public_dir = root / "public"
+    train_paths: List[str] = []
+    val_paths: List[str] = []
+
+    priority_order = ["deeppcb", "gc10_det", "neu_det", "insulator_defect"]
+    for key in priority_order:
+        ds_dir = public_dir / key
+        train_p = ds_dir / "images" / "train"
+        val_p = ds_dir / "images" / "val"
+        if train_p.is_dir():
+            train_paths.append(str(train_p.resolve()))
+        if val_p.is_dir():
+            val_paths.append(str(val_p.resolve()))
+
+    if not train_paths:
+        print(f"  [SKIP] Stage 1B: No public datasets found under {public_dir}")
+        return None
+
+    header = """\
+Stage 1B: Public Defect Backbone Adaptation
+===========================================
+Target: Adapt backbone deep layers to industrial anomaly textures.
+Init: Stage 1A best.pt (weights/stage1a_public_head.pt).
+Datasets: DeepPCB + NEU-DET + GC10-DET.
+Classes: 1 (generic_defect).
+
+Strategy:
+  - Freeze backbone early layers [0-5] → protect low-level COCO features.
+  - Unfreeze backbone deep layers [6-10] + neck + head.
+  - Lower LR (0.0003) to prevent catastrophic forgetting.
+  - cos_lr for smooth convergence.
+  - patience=25 to stop early.
+
+Output: weights/stage1b_public_backbone.pt.
+Next:  Stage 2 (domain adaptation to contact-net 7 classes).
+"""
+
+    if data_yaml.exists():
+        config = {
+            "path": str(mixed_dir.resolve()),
+            "train": "images/train",
+            "val": "images/val",
+            "nc": 1,
+            "names": ["generic_defect"],
+            "epochs": 60,
+            "imgsz": 1024,
+            "batch": 16,
+            "optimizer": "AdamW",
+            "lr0": 0.0003,
+            "lrf": 0.05,
+            "cos_lr": True,
+            "weight_decay": 0.0005,
+            "warmup_epochs": 3,
+            "warmup_bias_lr": 0.0003,
+            "mosaic": 0.2,
+            "mixup": 0.0,
+            "copy_paste": 0.0,
+            "erasing": 0.0,
+            "hsv_h": 0.015,
+            "hsv_s": 0.6,
+            "hsv_v": 0.6,
+            "degrees": 4.0,
+            "translate": 0.12,
+            "scale": 0.7,
+            "shear": 0.5,
+            "perspective": 0.0002,
+            "close_mosaic": 25,
+            "patience": 25,
+            "freeze": [0, 1, 2, 3, 4, 5],
+        }
+    else:
+        if not val_paths:
+            val_paths = train_paths
+        config = {
+            "train": train_paths,
+            "val": val_paths[:1] if val_paths else train_paths[:1],
+            "nc": 1,
+            "names": ["generic_defect"],
+            "epochs": 60,
+            "imgsz": 1024,
+            "batch": 16,
+            "optimizer": "AdamW",
+            "lr0": 0.0003,
+            "lrf": 0.05,
+            "cos_lr": True,
+            "weight_decay": 0.0005,
+            "warmup_epochs": 3,
+            "warmup_bias_lr": 0.0003,
+            "mosaic": 0.2,
+            "mixup": 0.0,
+            "copy_paste": 0.0,
+            "erasing": 0.0,
+            "hsv_h": 0.015,
+            "hsv_s": 0.6,
+            "hsv_v": 0.6,
+            "degrees": 4.0,
+            "translate": 0.12,
+            "scale": 0.7,
+            "shear": 0.5,
+            "perspective": 0.0002,
+            "close_mosaic": 25,
+            "patience": 25,
+            "freeze": [0, 1, 2, 3, 4, 5],
+        }
+
+    out_path = CONFIG_OUTPUT_DIR / "stage1b_public_backbone.yaml"
+    _write_yaml(out_path, config, header=header, dry_run=dry_run)
+    return out_path
+
+
 def generate_stage2_domain_adapt(root: Path, dry_run: bool = False) -> Optional[Path]:
     """Stage 2: Domain adaptation — public defect → custom contact-net 7 classes."""
     subway_dir = root / "subway_crops"
@@ -313,24 +558,29 @@ Acceptance: mAP50 > 0.35, mAP50-95 > 0.25, all per-class AP > 0.
         "val": val_path,
         "nc": 7,
         "names": CUSTOM_CLASSES,
-        "epochs": 50,
+        "epochs": 40,
         "imgsz": 1024,
         "batch": 16,
         "optimizer": "AdamW",
-        "lr0": 0.001,
-        "lrf": 1.0,
+        "lr0": 0.0008,
+        "lrf": 0.1,
         "warmup_epochs": 3,
-        "cos_lr": False,
+        "warmup_bias_lr": 0.0008,
+        "cos_lr": True,
+        "weight_decay": 0.0005,
         "mosaic": 0.1,
         "mixup": 0.0,
         "copy_paste": 0.0,
         "erasing": 0.0,
         "hsv_h": 0.015,
         "hsv_s": 0.5,
-        "hsv_v": 0.5,
+        "hsv_v": 0.6,
         "degrees": 3.0,
-        "translate": 0.1,
+        "translate": 0.10,
         "scale": 0.4,
+        "shear": 0.5,
+        "perspective": 0.0001,
+        "patience": 18,
         "freeze": [0, 1, 2, 3, 4, 5, 6, 7],
     }
 
@@ -381,33 +631,35 @@ Output: weights/stage3_main.pt.
         "val": val_path,
         "nc": 7,
         "names": CUSTOM_CLASSES,
-        "epochs": 120,
+        "epochs": 80,
         "imgsz": 1280,
         "batch": 12,
         "optimizer": "AdamW",
-        "lr0": 0.0008,
+        "lr0": 0.0005,
         "lrf": 0.02,
-        "warmup_epochs": 8,
+        "warmup_epochs": 3,
         "warmup_momentum": 0.5,
-        "weight_decay": 0.0005,
+        "warmup_bias_lr": 0.0005,
+        "weight_decay": 0.00075,
         "cos_lr": True,
-        "patience": 40,
-        "mosaic": 0.2,
+        "patience": 28,
+        "mosaic": 0.15,
         "mixup": 0.0,
         "copy_paste": 0.0,
         "erasing": 0.0,
         "hsv_h": 0.015,
         "hsv_s": 0.6,
-        "hsv_v": 0.5,
-        "degrees": 5.0,
+        "hsv_v": 0.6,
+        "degrees": 4.0,
         "translate": 0.12,
-        "scale": 0.5,
+        "scale": 0.45,
         "shear": 1.0,
-        "perspective": 0.0003,
+        "perspective": 0.0002,
         "flipud": 0.0,
         "fliplr": 0.5,
-        "close_mosaic": 40,
+        "close_mosaic": 35,
         "auto_augment": "randaugment",
+        "save_period": 5,
     }
 
     out_path = CONFIG_OUTPUT_DIR / "stage3_main_training.yaml"
@@ -457,26 +709,31 @@ Output: weights/stage4_best_finetune.pt.
         "val": val_path,
         "nc": 7,
         "names": CUSTOM_CLASSES,
-        "epochs": 30,
+        "epochs": 15,
         "imgsz": 1280,
         "batch": 12,
         "optimizer": "AdamW",
-        "lr0": 0.00003,
+        "lr0": 0.00001,
         "lrf": 1.0,
         "cos_lr": False,
-        "patience": 8,
+        "weight_decay": 0.0005,
+        "patience": 5,
+        "warmup_epochs": 0,
+        "warmup_bias_lr": 0.00001,
         "mosaic": 0.0,
         "mixup": 0.0,
         "copy_paste": 0.0,
         "erasing": 0.0,
-        "degrees": 1.0,
-        "translate": 0.05,
-        "scale": 0.2,
+        "hsv_h": 0.003,
+        "hsv_s": 0.1,
+        "hsv_v": 0.1,
+        "degrees": 0.0,
+        "translate": 0.02,
+        "scale": 0.1,
         "shear": 0.0,
         "perspective": 0.0,
-        "hsv_h": 0.005,
-        "hsv_s": 0.2,
-        "hsv_v": 0.2,
+        "flipud": 0.0,
+        "fliplr": 0.0,
         "freeze": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
         "save_period": 1,
     }
@@ -532,14 +789,17 @@ Output: weights/stage5_calibrated.pt.
         "val": val_path,
         "nc": 7,
         "names": CUSTOM_CLASSES,
-        "epochs": 30,
+        "epochs": 20,
         "imgsz": 1280,
         "batch": 12,
         "optimizer": "AdamW",
         "lr0": 0.00002,
         "lrf": 1.0,
         "cos_lr": False,
-        "patience": 10,
+        "weight_decay": 0.0005,
+        "patience": 6,
+        "warmup_epochs": 0,
+        "warmup_bias_lr": 0.00002,
         "mosaic": 0.0,
         "mixup": 0.0,
         "copy_paste": 0.0,
@@ -554,7 +814,7 @@ Output: weights/stage5_calibrated.pt.
         "hsv_v": 0.0,
         "flipud": 0.0,
         "fliplr": 0.0,
-        "freeze": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
+        "freeze": [0, 1, 2, 3, 4, 5, 6, 7],
         "save_period": 1,
     }
 
@@ -586,8 +846,8 @@ Examples:
         help=f"Dataset root directory (default: {DEFAULT_DATASET_ROOT})",
     )
     parser.add_argument(
-        "--stages", type=str, nargs="*", choices=["p2", "1", "2", "3", "4", "5"],
-        help="Specific stages to generate configs for (p2, 1-5). Default: all available.",
+        "--stages", type=str, nargs="*", choices=["p2", "1", "1a", "1b", "2", "3", "4", "5"],
+        help="Specific stages to generate configs for (p2, 1a, 1b, 2-5). Default: all available.",
     )
     parser.add_argument(
         "--phases", type=str, nargs="*", dest="stages_deprecated",
@@ -621,7 +881,9 @@ Examples:
 
     generators = {
         "p2": ("Stage P2 (optional): P2 TT100K Tiny-Object Head Warmup", generate_stage_p2_tiny_pretrain),
-        "1":  ("Stage 1: Public Defect Pretraining (DeepPCB+NEU+GC10)", generate_stage1_public_pretrain),
+        "1":  ("Stage 1 (Legacy): Public Defect Pretraining (single-stage, backward compat)", generate_stage1_public_pretrain),
+        "1a": ("Stage 1A: Public Defect Neck/Head Warmup", generate_stage1a_public_head),
+        "1b": ("Stage 1B: Public Defect Backbone Adaptation", generate_stage1b_public_backbone),
         "2":  ("Stage 2: Custom Domain Adaptation (7 classes)", generate_stage2_domain_adapt),
         "3":  ("Stage 3: Main Training (1280 native crops)", generate_stage3_main_training),
         "4":  ("Stage 4: Short Fine-Tune (minimal augmentation)", generate_stage4_short_finetune),
@@ -656,14 +918,20 @@ Examples:
             print(f"  Stage {stage_key}: SKIPPED (data not available)")
 
     print()
-    print("  Recommended training flow:")
-    print("    1. Stage 1 -> weights/stage1_public_pretrain.pt")
-    print("    2. Stage 2 -> weights/stage2_domain_adapt.pt")
-    print("    3. Stage 3 -> weights/stage3_main.pt")
-    print("    4. Stage 4 -> weights/stage4_best_finetune.pt")
+    print("  Recommended training flow (new):")
+    print("    1. Stage 1A → weights/stage1a_public_head.pt")
+    print("    2. Stage 1B → weights/stage1b_public_backbone.pt")
+    print("    3. Stage 2  → weights/stage2_domain_adapt.pt")
+    print("    4. Stage 3  → weights/stage3_main.pt")
+    print("    5. Stage 4  → weights/stage4_best_finetune.pt")
+    print()
+    print("  Legacy single-stage flow:")
+    print("    1. Stage 1 → weights/stage1_public_pretrain.pt")
+    print("    2. Stage 2 → weights/stage2_domain_adapt.pt")
+    print("    ...")
     print()
     print("  One-command training:")
-    print("    python scripts/train_pipeline.py --stages 1 2 3 4")
+    print("    python scripts/train_pipeline.py --stages 1a 1b 2 3 4")
     print()
 
 

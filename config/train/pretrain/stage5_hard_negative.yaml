@@ -1,39 +1,52 @@
 # ============================================================================
-# Stage 5 (optional): Hard Negative Mining + Threshold Calibration
+# Stage 5 (optional): Hard Negative Mining + Threshold Calibration (v2)
 # ============================================================================
 # Migrated from: stage4_hard_negative.yaml, S4
 #
 # 目标: 用 Stage 4 模型收集误检 crop, 低 lr 再训练提升 Precision
 #       然后每类单独搜索阈值 (Precision/Recall 双目标 ≥90%)
 # 初始化: Stage 4 best.pt
-# 数据: 自制 subway_crops (正样本) + 难负样本 crop (hard negatives)
+# 数据: subway_crops (正样本 7 类) + hard negative crops (无标签)
 #       正样本 : 难负样本 = 1 : 1
 #
-# 难负样本采集重点:
-#   - 正常螺栓但反光
-#   - 正常开口销但边缘模糊
-#   - 绝缘子阴影
-#   - 线夹边缘
-#   - 切片边界伪影
-#   - 运动模糊区域
+# 难负样本采集重点 (按优先级):
+#   1. 正常螺栓/螺母 (SVHBNM/VHBNM 最大误检源)
+#   2. 正常销钉 (CBHPM/CBVPM 最大误检源)
+#   3. 金属边缘反光区域
+#   4. 阴影遮挡区域
+#   5. 切片边界伪影
+#   6. 运动模糊区域
 #
-# 注意: 此阶段需要先运行 Stage 4 模型收集误检, 再构建 hard_negative 数据集
-#    只建议在 Stage 4 Precision < 90% 时运行
+# v2 changes (2026-06-27):
+#   - warmup_epochs: 3 → 0 (NO warmup — consistent low LR)
+#   - warmup_bias_lr: 0.1 → 0.00002 (matched to lr0)
+#   - epochs: 30 → 20
+#   - lrf: 0.1 → 1.0 (constant LR — no decay for fine-tuning)
+#   - patience: 8 → 6
+#   - freeze: [0-9] → [0-7] (slightly less frozen — allow neck adaptation)
+#   - NO auto_augment (raw real distribution only)
+#
+# 操作流程:
+#   1. python scripts/collect_hard_negatives.py (用 Stage 4 best.pt 推理)
+#   2. 人工快速确认误检框
+#   3. 生成 negative crops 加入 subway_crops_hnm/
+#   4. 此阶段训练
+#   5. python scripts/calibrate_thresholds.py (per-class threshold search)
 # ============================================================================
 
-epochs: 30
+epochs: 20
 imgsz: 1280
 batch: 12
 optimizer: AdamW
 lr0: 0.00002
-lrf: 0.1
+lrf: 1.0
 momentum: 0.937
 weight_decay: 0.0005
-warmup_epochs: 3
-warmup_momentum: 0.8
-warmup_bias_lr: 0.1
+warmup_epochs: 0          # 关掉 warmup — 所有 param groups 从 lr0 起步
+warmup_bias_lr: 0.00002   # 与 lr0 一致
 cos_lr: false
-patience: 8
+patience: 6
+save_period: 1
 
 # ── 数据增强 (完全关闭 — 只学真实分布) ──
 mosaic: 0.0
@@ -51,7 +64,6 @@ hsv_h: 0.0
 hsv_s: 0.0
 hsv_v: 0.0
 close_mosaic: 0
-auto_augment: randaugment
 
-# ── 冻结 backbone 前 70%, 不做大规模参数更新 ──
-freeze: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
+# ── 冻结 backbone 前半, 微调 neck 深层 + head ──
+freeze: [0, 1, 2, 3, 4, 5, 6, 7]

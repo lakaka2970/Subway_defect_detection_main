@@ -1,19 +1,26 @@
 # ============================================================================
-# Stage 4: Short Fine-Tune — Minimal Augmentation (unified training pipeline)
+# Stage 4: Short Fine-Tune — Minimal Augmentation (unified training pipeline v2)
 # ============================================================================
 # Migrated from: stage3_short_finetune.yaml, Phase 6, S3, C3
 #
-# 目标: 真实分布短微调, 早停防退化
-#       最近训练结果已显示长时间 C3 会退化 (Run D: -0.018 mAP50)
+# 目标: 真正低学习率短微调, 在真实分布上精调, 早停防退化
 # 初始化: Stage 3 best.pt
 # 数据: subway_crops (接触网缺陷, 7 类)
 #
-# 与 legacy C3 的区别:
-#   - 缩短到 30 epochs (C3 的 50 epochs 后半程主要是记忆训练集)
-#   - patience=8 (快速早停)
-#   - 冻结 backbone 前 70% (不再像 C3 那样全部解冻, 防止破坏已学特征)
-#   - 每 epoch 保存 (save_period=1), 最终从 best_mAP50-95 选择
-#   - 不使用 last.pt! (last 往往已退化)
+# v2 changes (2026-06-27) — CRITICAL FIX:
+#   - warmup_epochs: 3 → 0 (NO warmup — avoid bias LR spike)
+#   - warmup_bias_lr: 0.1 → 0.00001 (MATCH lr0 — was causing 0.067 spike)
+#     Previous runs showed lr/pg2 reaching 0.067 in epoch 1,
+#     destroying the purpose of low-LR fine-tuning.
+#   - epochs: 30 → 15 (converges fast, EarlyStop at epoch 3-5)
+#   - patience: 8 → 5 (shorter, prevents oscillation)
+#   - lr0: 3e-5 → 1e-5 (truly low LR)
+#   - hsv_v: 0.2 → 0.1, hsv_s: 0.2 → 0.1 (even lighter augmentation)
+#   - fliplr: 0.3 → 0.0 (no geometric augment for final distribution)
+#   - NO auto_augment (use raw real distribution only)
+#
+# Model selection: Save every epoch, pick best_mAP50-95.pt.
+# NEVER default to last.pt — it's usually degraded.
 # ============================================================================
 
 # ── 数据集 ──
@@ -21,38 +28,36 @@ data: data/subway_crops/subway_crops.yaml
 nc: 7
 names: ["VHBNM", "VHBNL", "SVHBNM", "SVHBNL", "SVHTNL", "CBHPM", "CBVPM"]
 
-epochs: 30
+epochs: 15
 imgsz: 1280
 batch: 12
 optimizer: AdamW
-lr0: 0.00003
+lr0: 0.00001
 lrf: 1.0
 momentum: 0.937
 weight_decay: 0.0005
-warmup_epochs: 3
-warmup_momentum: 0.8
-warmup_bias_lr: 0.1
+warmup_epochs: 0          # 关掉 warmup — 所有 param groups 从 lr0 起步
+warmup_bias_lr: 0.00001   # 与 lr0 一致, 防止 bias LR 异常飙升
 cos_lr: false
-patience: 8
-save_period: 1            # 每 epoch 保存, 供训练后选择最佳模型
+patience: 5
+save_period: 1             # 每 epoch 保存, 供训练后选择最佳模型
 
 # ── 数据增强 (极轻量 — 接近推理分布) ──
 mosaic: 0.0
 mixup: 0.0
 copy_paste: 0.0
 erasing: 0.0
-degrees: 1.0
-translate: 0.05
-scale: 0.2
+degrees: 0.0
+translate: 0.02
+scale: 0.1
 shear: 0.0
 perspective: 0.0
 flipud: 0.0
-fliplr: 0.3
-hsv_h: 0.005
-hsv_s: 0.2
-hsv_v: 0.2
+fliplr: 0.0
+hsv_h: 0.003
+hsv_s: 0.1
+hsv_v: 0.1
 close_mosaic: 0
-auto_augment: randaugment
 
 # ── 冻结 backbone 前 70%, 只微调 neck + head + attention ──
 freeze: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]

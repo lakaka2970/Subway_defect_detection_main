@@ -564,7 +564,9 @@ def load_pretrain_config(stage_name: str) -> dict:
     Args:
         stage_name: One of:
             - ``"stage_p2_tiny_pretrain"`` — Stage P2 (optional) TT100K P2 head
-            - ``"stage1_public_pretrain"`` — Stage 1 public defect pretraining
+            - ``"stage1a_public_head"`` — Stage 1A public head/neck warmup
+            - ``"stage1b_public_backbone"`` — Stage 1B public backbone adaptation
+            - ``"stage1_public_pretrain"`` — Legacy Stage 1 (backward compat)
             - ``"stage2_domain_adapt"`` — Stage 2 domain adaptation
             - ``"stage3_main_training"`` — Stage 3 main training
             - ``"stage4_short_finetune"`` — Stage 4 short fine-tune
@@ -604,12 +606,15 @@ def load_pretrain_config(stage_name: str) -> dict:
 
 
 _UNIFIED_STAGE_CONFIG_MAP = {
-    1: "stage1_public_pretrain",
+    "p2": "stage_p2_tiny_pretrain",
+    "1a": "stage1a_public_head",
+    "1b": "stage1b_public_backbone",
+    1: "stage1_public_pretrain",        # backward-compat: legacy single-stage 1
+    "1": "stage1_public_pretrain",       # backward-compat
     2: "stage2_domain_adapt",
     3: "stage3_main_training",
     4: "stage4_short_finetune",
     5: "stage5_hard_negative",
-    "p2": "stage_p2_tiny_pretrain",
 }
 
 

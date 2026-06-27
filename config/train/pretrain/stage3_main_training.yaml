@@ -1,5 +1,5 @@
 # ============================================================================
-# Stage 3: Main Training — Native Resolution (unified training pipeline)
+# Stage 3: Main Training — Native Resolution (unified training pipeline v2)
 # ============================================================================
 # Migrated from: stage2_scale_adaptation.yaml, Phase 5, S2, C2
 #
@@ -7,15 +7,18 @@
 #       这是主训练阶段 — 贡献最大的 mAP 提升
 # 初始化: Stage 2 best.pt
 # 数据: subway_crops (接触网缺陷, 7 类)
-# 模型: YOLO11s-P2-EMA-SimAM (推荐) 或 yolo11s-EMA-SimAM
 # 输入: 1280 (固定, 不推荐 YOLO 默认 ±50% 的大范围 multi_scale)
 #
-# 与 legacy C2 的区别:
-#   - AdamW 替代低效 SGD
-#   - 关闭 erasing/copy_paste (保护小目标)
-#   - mosaic 降到 0.2 (小目标不因 mosaic resize 进一步缩小)
-#   - close_mosaic=40 (33% 纯真实图像精调)
-#   - patience=40 (防止后半程过拟合)
+# v2 changes (2026-06-27):
+#   - epochs: 120 → 80 (peak observed at epoch ~57, later epochs degrade)
+#   - patience: 40 → 28 (tighter early stop)
+#   - close_mosaic: 40 → 35 (adjusted proportionally)
+#   - lr0: 0.0008 → 0.0005 (slightly lower for stability)
+#   - warmup_epochs: 8 → 3 (shorter warmup, pretrained weights are stable)
+#   - weight_decay: 0.0005 → 0.00075 (mildly stronger regularization)
+#   - mosaic: 0.2 → 0.15 (less distortion for real-image convergence)
+#   - save_period: 5 (checkpoint every 5 epochs for post-hoc selection)
+#   - hsv_v: 0.5 → 0.6 (better tunnel lighting variance coverage)
 # ============================================================================
 
 # ── 数据集 ──
@@ -23,34 +26,34 @@ data: data/subway_crops/subway_crops.yaml
 nc: 7
 names: ["VHBNM", "VHBNL", "SVHBNM", "SVHBNL", "SVHTNL", "CBHPM", "CBVPM"]
 
-epochs: 120
+epochs: 80
 imgsz: 1280
 batch: 12
 optimizer: AdamW
-lr0: 0.0008
+lr0: 0.0005
 lrf: 0.02
-warmup_epochs: 8
+warmup_epochs: 3
 warmup_momentum: 0.5
-weight_decay: 0.0005
+warmup_bias_lr: 0.0005
+weight_decay: 0.00075
 cos_lr: true
-patience: 40
+patience: 28
+save_period: 5
 
 # ── 数据增强 (弱增强, 保护小目标) ──
-# 不启用 multi_scale:true (随机 ±50% 可能产生 640 输入, 小目标又被压没)
-# 推荐固定 1280 或手动实现 [1024, 1280, 1536] 尺度集合
-mosaic: 0.2
+mosaic: 0.15
 mixup: 0.0
 copy_paste: 0.0         # 小目标场景禁用
 erasing: 0.0            # 保护 8-10px 小目标不被随机擦除
 hsv_h: 0.015
 hsv_s: 0.6
-hsv_v: 0.5
-degrees: 5.0
+hsv_v: 0.6
+degrees: 4.0
 translate: 0.12
-scale: 0.5
+scale: 0.45
 shear: 1.0
-perspective: 0.0003
+perspective: 0.0002
 flipud: 0.0
 fliplr: 0.5
-close_mosaic: 40        # 最后 40 epoch (33%) 关闭 mosaic, 在真实图像上精调
+close_mosaic: 35
 auto_augment: randaugment
