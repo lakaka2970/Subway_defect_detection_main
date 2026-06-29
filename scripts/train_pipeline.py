@@ -295,6 +295,43 @@ def run_preflight(
 # ║                          STAGE TRAINING LOGIC                             ║
 # ╚════════════════════════════════════════════════════════════════════════════╝
 
+def _find_stage_best_pt(stage_id: str) -> Optional[Path]:
+    """Search ``output/*/stage_{stage_id}/weights/best.pt`` for existing weights.
+
+    This is a fallback for when ``STAGE_DEFS[stage][\"output\"]`` paths (under
+    ``weights/``) don't exist — e.g. the pipeline copy step was skipped or the
+    files were cleaned up.  Scans all timestamped output directories and returns
+    the most recently modified match.
+
+    Args:
+        stage_id: Stage identifier (``\"4\"``, ``\"3\"``, etc.).
+
+    Returns:
+        Path to the most recent ``best.pt``, or ``None`` if none found.
+    """
+    output_root = _PROJECT_ROOT / "output"
+    if not output_root.is_dir():
+        return None
+
+    candidates: List[Tuple[float, Path]] = []
+    for run_dir in sorted(output_root.iterdir(), reverse=True):
+        if not run_dir.is_dir():
+            continue
+        p = run_dir / f"stage_{stage_id}" / "weights" / "best.pt"
+        if p.exists():
+            candidates.append((p.stat().st_mtime, p))
+
+    if candidates:
+        candidates.sort(key=lambda x: x[0], reverse=True)
+        best = candidates[0][1]
+        logger.info(
+            "Found %s weights via output/*/stage_%s/weights/best.pt: %s",
+            stage_id, stage_id, best,
+        )
+        return best
+    return None
+
+
 def _resolve_pretrained(
     stage_id: str,
     stages_done: List[str],
@@ -314,13 +351,19 @@ def _resolve_pretrained(
     stage_def = STAGE_DEFS.get(stage_id, {})
     nc_warning = ""
 
-    # ── 1. Explicit pretrained_from ──
+    # ── 1. Explicit pretrained_from (check disk regardless of stages_done) ──
     pretrained_from = stage_def.get("pretrained_from")
-    if pretrained_from and pretrained_from in stages_done:
+    if pretrained_from:
         out = STAGE_DEFS.get(pretrained_from, {}).get("output", "")
         if out:
             p = Path(out)
             if p.exists():
+                if pretrained_from not in stages_done:
+                    logger.info(
+                        "Stage %s: pretrained_from=%s not in current run, "
+                        "but output file found on disk",
+                        stage_id, pretrained_from,
+                    )
                 if stage_def.get("nc_mismatch"):
                     src_stage = STAGE_DEFS.get(pretrained_from, {})
                     nc_warning = (
@@ -338,33 +381,79 @@ def _resolve_pretrained(
 
             logger.warning(
                 "Stage %s: pretrained_from=%s but output file %s not found — "
-                "falling back to chain search",
+                "trying output/ discovery",
                 stage_id, pretrained_from, p,
             )
+            # Try output/*/stage_{pretrained_from}/weights/best.pt
+            found = _find_stage_best_pt(pretrained_from)
+            if found:
+                if stage_def.get("nc_mismatch"):
+                    src_stage = STAGE_DEFS.get(pretrained_from, {})
+                    nc_warning = (
+                        f"⚠ nc MISMATCH: {src_stage.get('name','')} → {stage_def.get('name','')}\n"
+                        f"  Source checkpoint has nc≠{stage_def.get('yaml','')} target nc.\n"
+                        f"  → Backbone + neck + attention weights loaded.\n"
+                        f"  → Detect classification layers WILL BE REINITIALIZED.\n"
+                        f"  This is EXPECTED for Stage 1B→2 (1-class → 7-class)."
+                    )
+                logger.info(
+                    "Stage %s pretrained from: %s (output/ discovery, pretrained_from=%s)",
+                    stage_id, found, pretrained_from,
+                )
+                return found, nc_warning
 
-    # ── 2. Chain search through completed stages ──
+    # ── 2. Chain search through ALL previous stages (check disk) ──
     try:
         current_idx = _STAGE_ORDER.index(stage_id)
     except ValueError:
         current_idx = len(_STAGE_ORDER)
 
     for prev_id in reversed(_STAGE_ORDER[:current_idx]):
-        if prev_id in stages_done:
-            out = STAGE_DEFS.get(prev_id, {}).get("output", "")
-            if out:
-                p = Path(out)
-                if p.exists():
-                    if stage_def.get("nc_mismatch"):
-                        nc_warning = (
-                            f"⚠ nc MISMATCH: {STAGE_DEFS.get(prev_id,{}).get('name','')} "
-                            f"→ {stage_def.get('name','')}\n"
-                            f"  → Detect classification layers will be reinitialized."
-                        )
+        out = STAGE_DEFS.get(prev_id, {}).get("output", "")
+        if out:
+            p = Path(out)
+            if p.exists():
+                if prev_id not in stages_done:
                     logger.info(
-                        "Stage %s pretrained from: %s (chain fallback via %s)",
-                        stage_id, p, prev_id,
+                        "Stage %s: chain fallback — %s not in current run, "
+                        "but output file found on disk",
+                        stage_id, prev_id,
                     )
-                    return p, nc_warning
+                if stage_def.get("nc_mismatch"):
+                    nc_warning = (
+                        f"⚠ nc MISMATCH: {STAGE_DEFS.get(prev_id,{}).get('name','')} "
+                        f"→ {stage_def.get('name','')}\n"
+                        f"  → Detect classification layers will be reinitialized."
+                    )
+                logger.info(
+                    "Stage %s pretrained from: %s (chain fallback via %s)",
+                    stage_id, p, prev_id,
+                )
+                return p, nc_warning
+
+    # ── 2b. Chain search failed → try output/*/ discovery for all previous stages ──
+    for prev_id in reversed(_STAGE_ORDER[:current_idx]):
+        found = _find_stage_best_pt(prev_id)
+        if found:
+            if stage_def.get("nc_mismatch"):
+                nc_warning = (
+                    f"⚠ nc MISMATCH: {STAGE_DEFS.get(prev_id,{}).get('name','')} "
+                    f"→ {stage_def.get('name','')}\n"
+                    f"  → Detect classification layers will be reinitialized."
+                )
+            logger.info(
+                "Stage %s pretrained from: %s (output/ discovery via %s)",
+                stage_id, found, prev_id,
+            )
+            return found, nc_warning
+
+    # ── 2c. Stage 5 guard: never use Stage 5's own prior output as pretrained ──
+    if stage_id == "5":
+        logger.warning(
+            "Stage 5: no Stage 4 (or earlier) weights found via STAGE_DEFS or "
+            "output/ discovery. Stage 5 must start from Stage 4 weights — "
+            "will use COCO pretrained, but results will be poor."
+        )
 
     # ── 3. Fallback: COCO pretrained weights ──
     logger.info("Stage %s: no prior stage weight found — will use COCO pretrained", stage_id)
@@ -598,6 +687,18 @@ Examples:
         help="After Stage 5 training, auto-run calibrate_thresholds.py for "
              "per-class confidence threshold optimization.",
     )
+    parser.add_argument(
+        "--calib-model", type=str, default=None,
+        help="Explicit path to Stage 5 model for calibration "
+             "(overrides auto-detection). Use when Stage 5 was run in a "
+             "different session.",
+    )
+    parser.add_argument(
+        "--pretrained", type=str, default=None,
+        help="Explicit path to pretrained weights for the FIRST stage "
+             "(bypasses all automatic resolution). Use when Stage 4 weights "
+             "are in a known location but auto-discovery fails.",
+    )
     args = parser.parse_args()
 
     # Resolve stages (handle --phases deprecation)
@@ -705,6 +806,22 @@ Examples:
 
     for sid in stage_ids:
         pretrained, nc_warning = _resolve_pretrained(sid, stages_done)
+
+        # ── --pretrained CLI override (first stage only) ──
+        if args.pretrained and sid == stage_ids[0]:
+            override = Path(args.pretrained)
+            if override.exists():
+                logger.info(
+                    "Using --pretrained override: %s (instead of %s)",
+                    override, pretrained,
+                )
+                pretrained = override
+            else:
+                logger.error(
+                    "--pretrained path not found: %s — ignoring override",
+                    override,
+                )
+
         ok = _run_stage(
             stage_id=sid,
             model_key=args.model,
@@ -736,6 +853,20 @@ Examples:
         stage5_output = Path(STAGE_DEFS["5"]["output"])
         stage4_output = Path(STAGE_DEFS["4"]["output"])
 
+        # ── Resolve Stage 5 model path ─────────────────────────────────
+        # Priority: (1) explicit --calib-model CLI arg,
+        #           (2) pipeline output at weights/stage5_calibrated.pt,
+        #           (3) run_dir / stage_5 / weights / best.pt
+        stage5_model = None
+        if getattr(args, "calib_model", None):
+            stage5_model = Path(args.calib_model)
+        elif stage5_output.exists():
+            stage5_model = stage5_output
+        else:
+            fallback = run_dir / "stage_5" / "weights" / "best.pt"
+            if fallback.exists():
+                stage5_model = fallback
+
         _run_stage5_calibration = args.auto_hnm
         if _run_stage5_calibration:
             print()
@@ -744,29 +875,38 @@ Examples:
             print("=" * 70)
 
             # ── Calibrate thresholds using Stage 5 model ──────────────
-            if stage5_output.exists():
-                print(f"\n  Running calibrate_thresholds.py with {stage5_output} ...")
+            if stage5_model and stage5_model.exists():
+                print(f"\n  Running calibrate_thresholds.py with {stage5_model} ...")
+                calib_out = run_dir / "calibrated_thresholds"
                 calib_result = subprocess.run(
                     [sys.executable, str(_SCRIPTS_DIR / "calibrate_thresholds.py"),
-                     "--model", str(stage5_output),
+                     "--model", str(stage5_model),
                      "--data", "data/subway_crops/subway_crops.yaml",
+                     "--output", str(calib_out),
                      "--device", args.device],
                     capture_output=False,
                     cwd=str(_PROJECT_ROOT),
                 )
                 if calib_result.returncode == 0:
-                    calib_path = Path("data/calibrated_thresholds/thresholds.json")
+                    calib_path = calib_out / "thresholds.json"
                     if calib_path.exists():
                         print(f"  [OK] Calibration complete: {calib_path}")
                         # Print recommended thresholds
                         import json
                         calib_data = json.loads(calib_path.read_text(encoding="utf-8"))
-                        print(f"\n  Recommended per-class confidence thresholds:")
-                        for cls_name, v in calib_data.items():
-                            print(f"    {cls_name:12s}: {v['recommended_threshold']:.2f}  "
-                                  f"(P={v['precision']:.3f}, R={v['recall']:.3f})")
+                        if calib_data:
+                            print(f"\n  Recommended per-class confidence thresholds:")
+                            for cls_name, v in calib_data.items():
+                                print(f"    {cls_name:12s}: {v['recommended_threshold']:.2f}  "
+                                      f"(P={v['precision']:.3f}, R={v['recall']:.3f})")
+                        else:
+                            print(f"  [WARN] Calibration returned empty results — "
+                                  f"check model and validation data")
                 else:
                     print(f"  [WARN] Calibration script returned non-zero exit code")
+            else:
+                print(f"\n  [WARN] Stage 5 model not found at {stage5_output} "
+                      f"— skipping calibration")
 
     # ═════════════════════════════════════════════════════════════════════
     #  SUMMARY

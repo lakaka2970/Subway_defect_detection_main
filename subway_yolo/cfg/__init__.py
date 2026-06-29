@@ -418,7 +418,14 @@ def get_save_dir(args: SimpleNamespace, name: Optional[str] = None) -> Path:
 
         project = args.project or ""
         if not Path(project).is_absolute():
-            project = (ROOT.parent / "tests/tmp/runs" if TESTS_RUNNING else RUNS_DIR) / args.task / project
+            # Resolve relative paths against CWD first (matches user expectation).
+            # Falls back to legacy RUNS_DIR/<task>/<project> only if the CWD-
+            # resolved path does not look like an intentional output directory.
+            cwd_project = Path.cwd() / project
+            if cwd_project.parent.exists():
+                project = str(cwd_project)
+            else:
+                project = (ROOT.parent / "tests/tmp/runs" if TESTS_RUNNING else RUNS_DIR) / args.task / project
         name = name or args.name or f"{args.mode}"
         save_dir = increment_path(Path(project) / name, exist_ok=args.exist_ok if RANK in {-1, 0} else True)
 
