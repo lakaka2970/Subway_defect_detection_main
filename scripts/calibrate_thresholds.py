@@ -185,9 +185,10 @@ def calibrate_thresholds(
         print(f"ERROR: Validation image directory not found: {val_img_dir}")
         sys.exit(1)
 
-    val_lbl_dir = val_img_dir.parent / "labels" / val_img_dir.name
+    val_lbl_dir = val_img_dir.parent / "labels"
     if not val_lbl_dir.is_dir():
-        val_lbl_dir = val_img_dir.parent.parent / "labels" / val_img_dir.name
+        # Try alternate layout: dataset_root/labels/split_name/
+        val_lbl_dir = val_img_dir.parent.parent / "labels" / val_img_dir.parent.name
     if not val_lbl_dir.is_dir():
         print(f"ERROR: Label directory not found")
         sys.exit(1)
