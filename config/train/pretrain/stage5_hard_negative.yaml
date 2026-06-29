@@ -39,8 +39,6 @@
 
 # ── 数据集 ──
 data: data/subway_crops/subway_crops.yaml
-nc: 7
-names: ["VHBNM", "VHBNL", "SVHBNM", "SVHBNL", "SVHTNL", "CBHPM", "CBVPM"]
 
 epochs: 20
 imgsz: 1280
