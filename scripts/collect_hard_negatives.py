@@ -203,12 +203,17 @@ def collect_hard_negatives(
     Returns:
         Summary statistics dict.
     """
-    # ── Lazy import ultralytics (avoid import-time CUDA init) ──────────
+    # ── Lazy import (avoid import-time CUDA init) ──────────────────────
+    # Prefer subway_yolo (vendored Ultralytics with custom modules) for
+    # loading EMA/SimAM/ECA checkpoints.  Fall back to stock ultralytics.
     try:
-        from ultralytics import YOLO
+        from subway_yolo import YOLO
     except ImportError:
-        print("ERROR: ultralytics is required. Install with: pip install ultralytics")
-        sys.exit(1)
+        try:
+            from ultralytics import YOLO
+        except ImportError:
+            print("ERROR: Neither subway_yolo nor ultralytics is installed.")
+            sys.exit(1)
 
     print("=" * 60)
     print("  Hard Negative Collector")
@@ -241,13 +246,22 @@ def collect_hard_negatives(
         print(f"ERROR: Validation image directory not found: {val_img_dir}")
         sys.exit(1)
 
-    # Resolve label directory: images/val → labels/ (sibling of images/)
-    val_lbl_dir = val_img_dir.parent / "labels"
-    if not val_lbl_dir.is_dir():
-        # Try alternate layout: dataset_root/labels/split_name/
-        val_lbl_dir = val_img_dir.parent.parent / "labels" / val_img_dir.parent.name
-    if not val_lbl_dir.is_dir():
-        print(f"WARNING: Label directory not found at {val_lbl_dir}. "
+    # Resolve label directory — try multiple common YOLO layouts:
+    #   Layout A (subway_crops):  {split}/images/  +  {split}/labels/
+    #   Layout B (Defect_dataset): images/{split}/  +  labels/{split}/
+    #   Layout C (flat):          images/{split}/  +  labels/
+    candidates = [
+        val_img_dir.parent / "labels",                                      # A
+        val_img_dir.parent.parent / "labels" / val_img_dir.name,            # B
+        val_img_dir.parent.parent / "labels",                               # C
+    ]
+    val_lbl_dir = None
+    for cand in candidates:
+        if cand.is_dir():
+            val_lbl_dir = cand
+            break
+    if val_lbl_dir is None:
+        print(f"WARNING: Label directory not found. Tried: {candidates}. "
               f"Will run inference without GT matching.")
         gt_labels = {}
     else:

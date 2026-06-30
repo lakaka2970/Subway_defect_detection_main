@@ -427,6 +427,84 @@ def _run(cmd: List[str], cwd: Optional[Path] = None) -> bool:
         return False
 
 
+def _is_html_content(file_path: Path) -> bool:
+    """Check if a file looks like an HTML page rather than actual dataset content."""
+    if not file_path.is_file():
+        return False
+    try:
+        with open(file_path, "rb") as f:
+            head = f.read(512).lstrip()
+        return bool(head) and (
+            head.startswith(b"<!DOCTYPE")
+            or head.startswith(b"<html")
+            or head.startswith(b"<HTML")
+        )
+    except (OSError, PermissionError):
+        return False
+
+
+def _validate_download_dir(dest_dir: Path, key: str = "") -> bool:
+    """Check that a download directory contains actual dataset content, not just HTML pages.
+
+    Returns True if the directory looks valid, False if it should be re-downloaded.
+    An empty directory is considered invalid.
+    """
+    if not dest_dir.exists() or not dest_dir.is_dir():
+        return False
+
+    # Collect all files (recursive, up to 2 levels)
+    all_files: List[Path] = []
+    for item in dest_dir.iterdir():
+        if item.is_file():
+            all_files.append(item)
+        elif item.is_dir() and not item.name.startswith("."):
+            for sub in item.iterdir():
+                if sub.is_file():
+                    all_files.append(sub)
+                elif sub.is_dir() and not sub.name.startswith("."):
+                    for sub2 in sub.iterdir():
+                        if sub2.is_file():
+                            all_files.append(sub2)
+
+    if not all_files:
+        return False  # empty directory
+
+    # If all files are HTML or very small text files → invalid
+    non_html: List[Path] = []
+    for f in all_files:
+        if not _is_html_content(f):
+            non_html.append(f)
+
+    if not non_html:
+        # Check if the HTML-looking files are actually large (could be mis-detected)
+        large_files = [f for f in all_files if f.stat().st_size > 100_000]  # >100KB
+        if not large_files:
+            tag = f"[{key}] " if key else ""
+            print(fail(f"{tag}Download dir contains only small HTML/text files — not a valid dataset"))
+            return False
+
+    return True
+
+
+def _autodl_pub_datasets() -> List[str]:
+    """List dataset keys found in autodl-pub (for pre-download check)."""
+    if not AUTODL_PUB.exists():
+        return []
+    found: List[str] = []
+    for entry in sorted(AUTODL_PUB.iterdir()):
+        if entry.is_dir() and not entry.name.startswith("."):
+            if any(entry.iterdir()):
+                found.append(entry.name.lower())
+    return found
+
+
+# ── KaggleHub optional import ──────────────────────────────────────
+try:
+    import kagglehub  # type: ignore[import-untyped]
+except ImportError:
+    kagglehub = None  # type: ignore[assignment]
+
+
 def _find_in_autodl_pub(globs: List[str]) -> Optional[Path]:
     """Return the first path matching any glob under AUTODL_PUB."""
     if not AUTODL_PUB.exists():
@@ -754,6 +832,16 @@ def convert_voc_dataset(
                                 anno_dirs.append(p)
     if not anno_dirs:
         print(fail(f"[{key}] Cannot find annotations directory under {src_dir}"))
+        # Diagnostic: show what's actually in the source directory
+        items = sorted(src_dir.iterdir()) if src_dir.exists() else []
+        if items:
+            listing = ", ".join(
+                f"{p.name}{'/' if p.is_dir() else ''}" for p in items[:15]
+            )
+            print(info(f"[{key}] Source dir contents: [{listing}]"))
+        else:
+            print(info(f"[{key}] Source dir is empty — download may have failed. "
+                       f"Check {src_dir.parent} for any downloaded archives."))
         return False
 
     img_dirs: List[Path] = []
@@ -1968,10 +2056,12 @@ class DatasetBuilder:
             elif spec.download_method == "manual":
                 # Manual download — check if user has placed data in _downloads/
                 dest_dir = self.download_dir / key
-                if dest_dir.exists() and any(dest_dir.iterdir()):
+                if dest_dir.exists() and any(dest_dir.iterdir()) and _validate_download_dir(dest_dir, key):
                     print(ok(f"[{key}] Found manually downloaded data at {dest_dir}"))
                     all_sources[key] = dest_dir
                 else:
+                    if dest_dir.exists() and any(dest_dir.iterdir()):
+                        print(warn(f"[{key}] Data at {dest_dir} looks invalid (HTML stub?), treating as missing."))
                     print(info(
                         f"[{key}] {spec.name} requires MANUAL download.\n"
                         f"       Download from: {spec.download_urls[0]}\n"
@@ -1984,11 +2074,17 @@ class DatasetBuilder:
         return all_sources
 
     def _download_direct(self, key: str, spec: DatasetSpec) -> Optional[Path]:
-        """Download a dataset via direct URL."""
+        """Download a dataset via direct URL, with content validation."""
         dest_dir = self.download_dir / key
+
+        # ── Check existing download ────────────────────────────────
         if dest_dir.exists() and any(dest_dir.iterdir()):
-            print(ok(f"[{key}] Already downloaded to {dest_dir}"))
-            return dest_dir
+            if _validate_download_dir(dest_dir, key):
+                print(ok(f"[{key}] Already downloaded to {dest_dir}"))
+                return dest_dir
+            else:
+                print(warn(f"[{key}] Previous download was invalid, cleaning up..."))
+                shutil.rmtree(dest_dir)
 
         for url in spec.download_urls:
             fname = Path(urlparse(url).path).name or f"{key}.zip"
@@ -1999,26 +2095,47 @@ class DatasetBuilder:
                 if not _dry_run_guard(self.dry_run):
                     if not _download_file(url, archive_path, f"{key}"):
                         continue
+                    # Check if downloaded file is HTML (e.g. Kaggle page without auth)
+                    if _is_html_content(archive_path):
+                        print(fail(f"[{key}] Downloaded file is an HTML page, not a dataset archive. "
+                                   f"The URL may require authentication. Deleting bad download..."))
+                        archive_path.unlink()
+                        continue
             else:
+                # Check existing archive
+                if _is_html_content(archive_path):
+                    print(warn(f"[{key}] Cached archive is HTML (not a dataset), deleting..."))
+                    archive_path.unlink()
+                    continue
                 print(ok(f"[{key}] Archive already at {archive_path}"))
 
             # Extract
             if not _dry_run_guard(self.dry_run):
                 dest_dir.mkdir(parents=True, exist_ok=True)
                 if self._extract_archive(archive_path, dest_dir):
-                    print(ok(f"[{key}] Extracted to {dest_dir}"))
-                    return dest_dir
+                    if _validate_download_dir(dest_dir, key):
+                        print(ok(f"[{key}] Extracted to {dest_dir}"))
+                        return dest_dir
+                    else:
+                        print(fail(f"[{key}] Extraction produced no valid dataset content"))
+                        # Don't delete — user may have mixed content
 
         return None
 
     def _download_kaggle(self, key: str, spec: DatasetSpec) -> Optional[Path]:
-        """Download via Kaggle API."""
+        """Download via Kaggle API, with kagglehub + GitHub fallbacks and content validation."""
         dest_dir = self.download_dir / key
-        if dest_dir.exists() and any(dest_dir.iterdir()):
-            print(ok(f"[{key}] Already at {dest_dir}"))
-            return dest_dir
 
-        # Try Kaggle CLI
+        # ── Check existing download ────────────────────────────────
+        if dest_dir.exists() and any(dest_dir.iterdir()):
+            if _validate_download_dir(dest_dir, key):
+                print(ok(f"[{key}] Already at {dest_dir}"))
+                return dest_dir
+            else:
+                print(warn(f"[{key}] Previous download was invalid (HTML stub), cleaning up..."))
+                shutil.rmtree(dest_dir)
+
+        # ── Parse Kaggle slug ──────────────────────────────────────
         kaggle_slug = None
         for url in spec.download_urls:
             m = re.search(r"kaggle\.com/datasets/([^/]+/[^/]+)", url)
@@ -2034,15 +2151,82 @@ class DatasetBuilder:
         if _dry_run_guard(self.dry_run):
             return dest_dir
 
-        # Try kaggle CLI
+        dest_dir.mkdir(parents=True, exist_ok=True)
+
+        # ── Strategy 1: Kaggle CLI ─────────────────────────────────
         if _run(["kaggle", "datasets", "download", "-d", kaggle_slug,
                   "-p", str(dest_dir), "--unzip"]):
             print(ok(f"[{key}] Downloaded via Kaggle CLI"))
-            return dest_dir
+            if _validate_download_dir(dest_dir, key):
+                return dest_dir
+            else:
+                print(warn(f"[{key}] CLI download invalid, cleaning up..."))
+                shutil.rmtree(dest_dir)
+                dest_dir.mkdir(parents=True, exist_ok=True)
 
-        # Fallback: try using requests + Kaggle public API
-        print(warn(f"[{key}] Kaggle CLI failed. Trying direct download..."))
-        return self._download_direct(key, spec)
+        # ── Strategy 2: kagglehub (no auth needed for public datasets) ──
+        if kagglehub is not None:
+            try:
+                print(info(f"[{key}] Trying kagglehub download..."))
+                dl_cache = Path(kagglehub.dataset_download(kaggle_slug))
+                if dl_cache.exists():
+                    # Copy from kagglehub cache to dest_dir
+                    for item in dl_cache.iterdir():
+                        dest_item = dest_dir / item.name
+                        if item.is_dir():
+                            if dest_item.exists():
+                                shutil.rmtree(dest_item)
+                            shutil.copytree(item, dest_item)
+                        else:
+                            shutil.copy2(item, dest_item)
+                    if _validate_download_dir(dest_dir, key):
+                        print(ok(f"[{key}] Downloaded via kagglehub"))
+                        return dest_dir
+                    else:
+                        print(warn(f"[{key}] kagglehub download invalid, cleaning up..."))
+                        shutil.rmtree(dest_dir)
+                        dest_dir.mkdir(parents=True, exist_ok=True)
+            except Exception as exc:
+                print(warn(f"[{key}] kagglehub failed: {exc}"))
+        else:
+            print(info(f"[{key}] Tip: install kagglehub for simpler Kaggle downloads: pip install kagglehub"))
+
+        # ── Strategy 3: GitHub clone (if GitHub URLs exist) ────────
+        github_urls = [u for u in spec.download_urls if "github.com" in u]
+        for gh_url in github_urls:
+            m = re.search(r"github\.com/([^/]+/[^/]+)", gh_url)
+            if not m:
+                continue
+            repo_path = m.group(1).rstrip("/")
+            git_url = f"https://github.com/{repo_path}.git"
+            print(info(f"[{key}] Trying GitHub mirror: {git_url}"))
+            if _dry_run_guard(self.dry_run):
+                return dest_dir
+            if _run(["git", "clone", "--depth", "1", git_url, str(dest_dir)]):
+                print(ok(f"[{key}] Cloned from GitHub: {git_url}"))
+                if _validate_download_dir(dest_dir, key):
+                    return dest_dir
+                else:
+                    print(warn(f"[{key}] GitHub clone invalid, cleaning up..."))
+                    shutil.rmtree(dest_dir)
+                    dest_dir.mkdir(parents=True, exist_ok=True)
+            else:
+                print(warn(f"[{key}] git clone failed: {git_url}"))
+
+        # ── Strategy 4: Direct URL (last resort) ────────────────────
+        result = self._download_direct(key, spec)
+        if result and _validate_download_dir(result, key):
+            return result
+
+        # ── All strategies exhausted ───────────────────────────────
+        print(fail(f"[{key}] All download methods failed."))
+        print(info(f"[{key}] Manual download options:"))
+        print(info(f"    1. Install Kaggle CLI and authenticate: pip install kaggle"))
+        print(info(f"       Then: kaggle datasets download -d {kaggle_slug} -p {dest_dir} --unzip"))
+        print(info(f"    2. Install kagglehub: pip install kagglehub"))
+        print(info(f"    3. Download from Kaggle: {spec.download_urls[0]}"))
+        print(info(f"       Place extracted files in: {dest_dir}"))
+        return None
 
     def _download_roboflow(self, key: str, spec: DatasetSpec) -> Optional[Path]:
         """Download via Roboflow API."""
@@ -2077,9 +2261,17 @@ class DatasetBuilder:
     def _download_github(self, key: str, spec: DatasetSpec) -> Optional[Path]:
         """Download from GitHub repository via git clone (preferred) or zip fallback."""
         dest_dir = self.download_dir / key
+
+        # ── Check existing download ────────────────────────────────
         if dest_dir.exists() and any(dest_dir.iterdir()):
-            print(ok(f"[{key}] Already at {dest_dir}"))
-            return dest_dir
+            if _validate_download_dir(dest_dir, key):
+                print(ok(f"[{key}] Already at {dest_dir}"))
+                return dest_dir
+            else:
+                print(warn(f"[{key}] Previous download was invalid, cleaning up..."))
+                shutil.rmtree(dest_dir)
+
+        dest_dir.mkdir(parents=True, exist_ok=True)
 
         # Try git clone first (preserves directory structure)
         for url in spec.download_urls:
@@ -2093,7 +2285,12 @@ class DatasetBuilder:
                 print(info(f"[{key}] git clone {git_url}"))
                 if _run(["git", "clone", "--depth", "1", git_url, str(dest_dir)]):
                     print(ok(f"[{key}] Cloned to {dest_dir}"))
-                    return dest_dir
+                    if _validate_download_dir(dest_dir, key):
+                        return dest_dir
+                    else:
+                        print(warn(f"[{key}] GitHub clone has no dataset content, cleaning up..."))
+                        shutil.rmtree(dest_dir)
+                        dest_dir.mkdir(parents=True, exist_ok=True)
                 else:
                     print(warn(f"[{key}] git clone failed, trying zip download..."))
 
