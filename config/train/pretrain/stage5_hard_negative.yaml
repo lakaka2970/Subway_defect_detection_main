@@ -41,6 +41,8 @@
 path: data/subway_crops
 train: train/images
 val: val/images
+nc: 7
+names: ["VHBNM", "VHBNL", "SVHBNM", "SVHBNL", "SVHTNL", "CBHPM", "CBVPM"]
 
 epochs: 20
 imgsz: 1280
