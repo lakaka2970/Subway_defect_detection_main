@@ -244,6 +244,94 @@ GPU 0: YOLO11m-EMA-SimAM        GPU 1: YOLO11m-P2-SimAM
 
 ---
 
+### 缺陷类别速查表
+
+> **权威来源**: `subway_defect/classes.py`（单一事实来源），与 `docs/接触网缺陷类型详解.docx` 保持一致。
+
+#### 完整 16 类缺陷编码
+
+| 编码 | 中文名称 | 严重等级 | 训练状态 | 所属系统 |
+|------|----------|:--------:|:--------:|----------|
+| `VHBNM` | 垂直悬吊安装底座螺母缺失 | serious | ★ 已训练 | 刚性接触网 |
+| `VHBNL` | 垂直悬吊安装底座螺母松动 | serious | ★ 已训练 | 刚性接触网 |
+| `SVHBNM` | 单支垂直悬吊槽钢底座螺母缺失 | serious | ★ 已训练 | 刚性接触网 |
+| `SVHBNL` | 单支垂直悬吊槽钢底座螺母松动 | serious | ★ 已训练 | 刚性接触网 |
+| `SVHTNL` | 单支垂直悬吊槽钢上方螺母松动 | normal | ★ 已训练 | 刚性接触网 |
+| `CBHPM` | 腕臂底座横向销钉缺口 | serious | ★ 已训练 | 柔性接触网 |
+| `CBVPM` | 腕臂底座垂直销钉缺口 | serious | ★ 已训练 | 柔性接触网 |
+| `RHTBNM` | 刚性悬挂吊柱顶板底面螺母缺失 | serious | 待标注 | 刚性接触网 |
+| `RHTBNL` | 刚性悬挂吊柱顶板底面螺母松动 | serious | 待标注 | 刚性接触网 |
+| `GWCSBNM` | 地线线夹托板安装底座螺母缺失 | serious | 待标注 | 刚性接触网 |
+| `GWCSBNL` | 地线线夹托板安装底座螺母松动 | serious | 待标注 | 刚性接触网 |
+| `GWCNM` | 地线线夹螺母缺失 | serious | 待标注 | 刚性接触网 |
+| `GWCNL` | 地线线夹螺母松动 | serious | 待标注 | 刚性接触网 |
+| `BSBM` | 汇流排中间接头螺栓缺失 | **critical** | 待标注 | 刚性接触网 |
+| `INSD` | 绝缘子破损 | **critical** | 待标注 | 刚性接触网 |
+| `DRPS` | 吊弦不受力 | serious | 待标注 | 柔性接触网 |
+
+#### 严重等级定义
+
+| 等级 | 英文 | 说明 | 典型类别 |
+|:----:|------|------|----------|
+| minor | minor | 轻微异常，不影响运行 | — |
+| normal | normal | 一般缺陷，需关注 | `SVHTNL` |
+| serious | serious | 严重缺陷，影响安全 | 大部分缺失/松动类 |
+| **critical** | critical | **危急缺陷**，立即停运 | `BSBM`, `INSD` |
+
+#### 命名规则
+
+缺陷编码由英文缩写组成，可读性强：
+
+```
+[位置前缀][组件缩写][状态后缀]
+
+位置前缀:
+  V  = Vertical     (垂直)
+  SV = Single Vertical (单支垂直)
+  GW = Ground Wire  (地线)
+  CB = Cantilever Base (腕臂底座)
+  RH = Rigid Hanger (刚性悬挂)
+  DR = Dropper      (吊弦)
+
+组件缩写:
+  HB  = Hanging Base      (悬吊底座)
+  TN  = Top Nut           (上方螺母)
+  BN  = Base Nut          (底座螺母)
+  CN  = Clamp Nut         (线夹螺母)
+  SB  = Splice Bar        (汇流排中间接头)
+  PM  = Pin Missing       (销钉缺口)
+
+状态后缀:
+  M  = Missing  (缺失)
+  L  = Loose    (松动)
+  P  = Pin gap  (销钉缺口)
+
+示例:
+  V   + HB + NM  → VHBNM  = 垂直悬吊安装底座螺母缺失
+  SV  + HB + NL  → SVHBNL = 单支垂直悬吊槽钢底座螺母松动
+  CB  + VP + M   → CBVPM  = 腕臂底座垂直销钉缺口
+```
+
+#### 旧编码兼容映射
+
+部分旧模型/旧标注中使用以下编码，推理时自动映射为新编码：
+
+| 旧编码 | → | 新编码 | 说明 |
+|--------|---|--------|------|
+| `VJBNM` | → | `VHBNM` | 旧: 垂直J型螺栓正常缺失 |
+| `VJBNL` | → | `VHBNL` | 旧: 垂直J型螺栓正常松动 |
+| `VJBSL` | → | `SVHTNL` | 旧: 垂直J型螺栓杆松动 |
+| `CBHSL` | → | `CBHPM` | 旧: U型抱箍螺栓横轴松动 |
+| `CBHNM` | → | `CBHPM` | 旧: U型抱箍螺栓平头螺母缺失 |
+| `CBHNL` | → | `CBHPM` | 旧: U型抱箍螺栓平头螺母松动 |
+| `CWZJ` | → | `DRPS` | 旧: 接触线ZJ型缺陷 |
+| `JXP` | → | `INSD` | 旧: JXP型绝缘子缺陷 |
+| `GJJ` | → | `BSBM` | 旧: 钢结构锈蚀/变形 |
+| `DDL` | → | `DRPS` | 旧: 吊弦松动/断裂 |
+| `BYLZ` | → | `INSD` | 旧: 其他异常（保守归并） |
+
+---
+
 ### 第一步：数据准备
 
 训练需要两类数据：自制接触网数据集（7 类）和多源公开数据集（工业缺陷通用预训练）。
