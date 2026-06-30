@@ -207,7 +207,18 @@ class BaseValidator:
             Profile(device=self.device),
             Profile(device=self.device),
         )
-        bar = TQDM(self.dataloader, desc=self.get_desc(), total=len(self.dataloader))
+        # During training, disable per-batch progress bar to avoid 100+ lines
+        # per validation epoch (carriage-return in-place updates don't work in
+        # all terminals, e.g. AutoDL web UI, piped logs).  The final summary
+        # from print_results() still appears.
+        bar = TQDM(
+            self.dataloader,
+            desc=self.get_desc(),
+            total=len(self.dataloader),
+            disable=True if self.training else None,
+        )
+        if self.training and RANK in {-1, 0}:
+            LOGGER.info(f"Validating on {self.args.split or 'val'} set ({len(self.dataloader)} batches)...")
         self.init_metrics(unwrap_model(model))
         self.jdict = []  # empty before each val
         for batch_i, batch in enumerate(bar):

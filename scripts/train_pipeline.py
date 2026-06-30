@@ -467,7 +467,7 @@ def _run_stage(
     batch: int,
     workers: int,
     pretrained: Optional[Path],
-    timestamp: str,
+    run_dir: Path,
     nc_warning: str = "",
     dry_run: bool = False,
 ) -> bool:
@@ -478,8 +478,7 @@ def _run_stage(
     model_path = _MODELS_DIR / model_file
     output_weight = Path(stage["output"])
 
-    # Output layout: output/<timestamp>/<stage_name>/
-    run_dir = _PROJECT_ROOT / "output" / timestamp
+    # Output layout: <run_dir>/<stage_name>/
     stage_name = f"stage_{stage_id}"
 
     print()
@@ -595,7 +594,7 @@ def _run_stage(
             logger.info("Saved: %s", output_weight)
 
             # ── Attempt per-class AP extraction ──────────────────
-            _log_per_class_metrics(stage_id, stage["name"], timestamp)
+            _log_per_class_metrics(stage_id, stage["name"], run_dir)
             return True
         else:
             logger.error("best.pt not found at %s — training may have failed", best_src)
@@ -606,16 +605,16 @@ def _run_stage(
         return False
 
 
-def _log_per_class_metrics(stage_id: str, stage_name: str, timestamp: str) -> None:
+def _log_per_class_metrics(
+    stage_id: str, stage_name: str, run_dir: Path,
+) -> None:
     """Attempt to extract per-class AP metrics from the stage output directory.
 
     Looks for per-class results in the Ultralytics output CSV and logs a
     summary table.  Non-blocking — failures are logged as warnings only.
     """
     try:
-        results_csv = (
-            _PROJECT_ROOT / "output" / timestamp / f"stage_{stage_id}" / "results.csv"
-        )
+        results_csv = run_dir / f"stage_{stage_id}" / "results.csv"
         if not results_csv.exists():
             logger.info("No results.csv for %s — skipping per-class summary", stage_name)
             return
@@ -624,9 +623,7 @@ def _log_per_class_metrics(stage_id: str, stage_name: str, timestamp: str) -> No
         # Instead, look for the per-class metrics in the val batch output
         # or PNG confusion matrix. For now, log that this is available after
         # manual inspection.
-        best_pt = (
-            _PROJECT_ROOT / "output" / f"stage{stage_id}" / "weights" / "best.pt"
-        )
+        best_pt = run_dir / f"stage_{stage_id}" / "weights" / "best.pt"
         if best_pt.exists():
             logger.info(
                 "Per-class metrics for %s: run validation manually:\n"
@@ -657,6 +654,9 @@ Examples:
 
   # Specific stages
   python scripts/train_pipeline.py --stages 1a 1b 2 --model yolo11m-EMA-SimAM --device 0
+
+  # Specify output directory (instead of auto-generated timestamp)
+  python scripts/train_pipeline.py --stages 5 --model yolo11m-EMA-SimAM --output output/stage5_run1
 
   # Dry-run
   python scripts/train_pipeline.py --stages 1a 1b 2 3 4 --dry-run
@@ -704,6 +704,14 @@ Examples:
         help="Explicit path to pretrained weights for the FIRST stage "
              "(bypasses all automatic resolution). Use when Stage 4 weights "
              "are in a known location but auto-discovery fails.",
+    )
+    parser.add_argument(
+        "--output", type=str, default=None,
+        help="Explicit output directory for this training run. "
+             "If provided, all stage results are saved under this directory. "
+             "If not provided, auto-generates output/<YYYYMMDD_HHMMSS>/. "
+             "Examples: --output output/my_experiment, "
+             "--output output/20260630_stage5_retry",
     )
     args = parser.parse_args()
 
@@ -803,9 +811,18 @@ Examples:
     # ═════════════════════════════════════════════════════════════════════
     #  TRAINING LOOP
     # ═════════════════════════════════════════════════════════════════════
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    run_dir = _PROJECT_ROOT / "output" / timestamp
-    print(f"\n  Run directory: {run_dir}")
+    if args.output:
+        # User-specified output directory
+        run_dir = Path(args.output)
+        if not run_dir.is_absolute():
+            run_dir = _PROJECT_ROOT / run_dir
+        timestamp = run_dir.name  # use last path component as run identifier
+        print(f"\n  Run directory: {run_dir}  (--output override)")
+    else:
+        # Auto-generate timestamped directory under output/
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        run_dir = _PROJECT_ROOT / "output" / timestamp
+        print(f"\n  Run directory: {run_dir}")
 
     stages_done: List[str] = []
     failed: List[str] = []
@@ -835,7 +852,7 @@ Examples:
             batch=batch,
             workers=workers,
             pretrained=pretrained,
-            timestamp=timestamp,
+            run_dir=run_dir,
             nc_warning=nc_warning,
             dry_run=args.dry_run,
         )
