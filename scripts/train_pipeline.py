@@ -557,7 +557,13 @@ def _run_stage(
             warmup_bias_lr, lr0, stage["name"], lr0,
         )
         cfg["warmup_bias_lr"] = lr0
-    elif warmup_epochs == 0 and warmup_bias_lr > lr0:
+    elif warmup_epochs == 0 and warmup_bias_lr != lr0:
+        logger.warning(
+            "Stage %s: warmup_epochs=0 but warmup_bias_lr=%.6f ≠ lr0=%.6f — "
+            "warmup is off so bias_lr is ignored, but mismatch may indicate config error",
+            stage_id, warmup_bias_lr, lr0,
+        )
+    elif warmup_epochs == 0:
         logger.info(
             "Stage %s: warmup_epochs=0, warmup_bias_lr=%.6f matches lr0=%.6f ✓",
             stage_id, warmup_bias_lr, lr0,

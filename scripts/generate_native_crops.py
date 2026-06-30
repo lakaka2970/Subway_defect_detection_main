@@ -647,8 +647,8 @@ Examples:
         help=f"Output root directory (default: {DEFAULT_OUTPUT})",
     )
     parser.add_argument(
-        "--crop-size", type=int, default=1024,
-        help="Crop size in pixels (default: 1024; 1280 for Stage 2 main training)",
+        "--crop-size", type=int, default=1280,
+        help="Crop size in pixels (default: 1280 for Stage 2-5 training; use 1024 for Stage 2 only)",
     )
     parser.add_argument(
         "--stride", type=int, default=512,
