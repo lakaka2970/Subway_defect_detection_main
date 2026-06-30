@@ -242,6 +242,229 @@ GPU 0: YOLO11m-EMA-SimAM        GPU 1: YOLO11m-P2-SimAM
 └──────────────┘    └──────────────┘    └──────────────┘    └──────────────┘    └──────────────┘
 ```
 
+### 完整命令速查（按执行顺序）
+
+> 以下命令覆盖从零到部署模型的完整流程，按实际训练顺序排列，可直接复制到终端执行。
+> **运行环境**: 训练端为 Linux (AutoDL)，`--device 0` 表示单 GPU。Windows 本地仅做数据集校验和轻量推理。
+
+---
+
+#### A. 首次环境配置
+
+```bash
+# 1. 克隆仓库
+git clone git@github.com:lakaka2970/Subway_defect_detection_main.git
+cd Subway_defect_detection_main
+
+# 2. 安装依赖
+pip install -e .
+python -c "from subway_yolo import YOLO; print('OK')"
+```
+
+```bash
+# 3. 后续同步代码（每次训练前执行）
+git pull origin feature/v2-model-training-refactor
+```
+
+---
+
+#### B. 数据集准备
+
+```bash
+# B1. 一键准备自制接触网数据集（标签修复 + YAML创建 + train/val划分）
+python scripts/prepare_dataset.py
+
+# B2. 下载并构建多源公开数据集（Stage 1A/1B 预训练用——AutoDL 上运行）
+python scripts/multi_source_dataset_builder.py --scan-only       # 先扫描已有数据
+python scripts/multi_source_dataset_builder.py                    # 下载缺失数据集
+```
+
+```bash
+# B3. 生成原生分辨率 crop（所有 Stage 2-5 的训练数据）
+#     Stage 2 需要 1024px 版本（与公开数据集分辨率一致）
+python scripts/generate_native_crops.py \
+    --data data/Defect_dataset/defect_data.yaml \
+    --output data/subway_crops_1024 \
+    --crop-size 1024 \
+    --negatives-per-image 25 \
+    --balance \
+    --debiasing
+
+#     Stage 3-5 使用 1280px 版本（主训练分辨率）
+python scripts/generate_native_crops.py \
+    --data data/Defect_dataset/defect_data.yaml \
+    --output data/subway_crops \
+    --crop-size 1280 \
+    --negatives-per-image 25 \
+    --balance \
+    --debiasing
+```
+
+```bash
+# B4. 数据集完整性校验（训练前必做——可在本地 Windows 运行）
+python scripts/validate_dataset.py --dataset_root data/Defect_dataset
+python scripts/validate_dataset.py --dataset_root data/multi_datasets/mixed_pretrain
+python scripts/validate_dataset.py --dataset_root data/subway_crops
+python scripts/validate_dataset.py --dataset_root data/subway_crops_1024
+```
+
+---
+
+#### C. 数据扩充（可选，推荐对少数类执行）
+
+```bash
+# C1. 场景增强（隧道暗光/阳光/模糊/白平衡偏移）
+python scripts/generate_scene_augmentations.py \
+    --train_images data/subway_crops/train/images \
+    --train_labels data/subway_crops/train/labels \
+    --class-aware \
+    --minority-multiplier 1.8 \
+    --n_augs 3
+
+# C2. 缺陷感知 Copy-Paste（小目标增强，提升 SVHBNM/CBVPM 等类的召回）
+python scripts/generate_defect_copy_paste.py \
+    --src data/subway_crops/train \
+    --output data/subway_crops_cp/train
+# 生成后合并: cp -n data/subway_crops_cp/train/images/* data/subway_crops/train/images/
+#            cp -n data/subway_crops_cp/train/labels/* data/subway_crops/train/labels/
+```
+
+---
+
+#### D. 训练配置自动生成
+
+```bash
+# 生成全部 6 个阶段的 YAML 配置（也可跳过——pipeline 会自动生成）
+python scripts/multi_source_pretrain_yaml.py
+# 产出: config/train/pretrain/stage{1a,1b,2,3,4,5}_*.yaml
+```
+
+---
+
+#### E. 一键训练（全程自动）
+
+```bash
+# 完整五阶段训练（1A → 1B → 2 → 3 → 4）
+# 自动完成: 安全检查 → 参数调优 → 配置生成 → 逐阶段训练 → 每类指标日志
+python scripts/train_pipeline.py \
+    --model yolo11m-EMA-SimAM \
+    --device 0
+```
+
+---
+
+#### F. 分阶段训练（按需执行）
+
+```bash
+# 仅公开缺陷预训练（Stage 1A → 1B → 2）
+python scripts/train_pipeline.py \
+    --stages 1a 1b 2 \
+    --model yolo11m-EMA-SimAM \
+    --device 0
+
+# 仅主训练 + 短微调（Stage 3 → 4）——从 Stage 2 best.pt 自动继承
+python scripts/train_pipeline.py \
+    --stages 3 4 \
+    --model yolo11m-EMA-SimAM \
+    --device 0
+
+# 单阶段（从已有前置权重自动解析）
+python scripts/train_pipeline.py \
+    --stages 4 \
+    --model yolo11m-EMA-SimAM \
+    --device 0
+
+# 显式指定前置权重路径 + 固定输出目录
+python scripts/train_pipeline.py \
+    --stages 5 \
+    --model yolo11m-EMA-SimAM \
+    --pretrained output/20260627_210823/stage_4/weights/best.pt \
+    --output output/stage5_retry \
+    --device 0
+
+# 预览不训练
+python scripts/train_pipeline.py --stages 1a 1b 2 3 4 --dry-run
+```
+
+---
+
+#### G. Stage 5 完整流程（难负样本挖掘 + 阈值校准）
+
+```bash
+# G1. 用 Stage 4 最佳模型在 subway_crops 验证集上收集误检 crop
+python scripts/collect_hard_negatives.py \
+    --model output/<YOUR_RUN>/stage_4/weights/best.pt \
+    --data data/subway_crops/subway_crops.yaml \
+    --conf 0.30 \
+    --device 0
+# 产出: data/hard_negatives/{VHBNM,VHBNL,SVHBNM,...}/ + summary.json
+
+# G2. 将难负样本混入训练集（作为无标签负样本，抑制 FP）
+for cls_dir in data/hard_negatives/*/; do
+    cls_name=$(basename "$cls_dir")
+    [ "$cls_name" = "summary.json" ] && continue
+    cp -n "$cls_dir"*.jpg data/subway_crops/train/images/ 2>/dev/null
+    count=$(ls "$cls_dir"*.jpg 2>/dev/null | wc -l)
+    echo "  $cls_name: $count hard negatives -> train/images/"
+done
+
+# G3. Stage 5 训练（超低 lr，冻结 backbone，零增强）
+python scripts/train_pipeline.py \
+    --stages 5 \
+    --model yolo11m-EMA-SimAM \
+    --output output/stage5_hnm \
+    --device 0
+
+# G4. 每类最优置信度阈值搜索（Precision/Recall 双目标 ≥ 0.90）
+python scripts/calibrate_thresholds.py \
+    --model output/stage5_hnm/stage_5/weights/best.pt \
+    --data data/subway_crops/subway_crops.yaml \
+    --target-precision 0.90 \
+    --target-recall 0.80 \
+    --output output/stage5_hnm/calibrated_thresholds \
+    --device 0
+# 产出: thresholds.json, per_class_report.csv, summary.txt
+```
+
+---
+
+#### H. 标注质量审计（可选，训练效果差时使用）
+
+```bash
+# 用 Stage 3/4 模型反向检查标注质量
+python scripts/audit_labels.py \
+    --model output/<YOUR_RUN>/stage_4/weights/best.pt \
+    --split val
+
+# 聚焦问题最大的类别
+python scripts/audit_labels.py \
+    --model output/<YOUR_RUN>/stage_4/weights/best.pt \
+    --classes SVHBNM SVHBNL --split val
+# 产出: data/label_audit/ (高置信FP/低置信FN + 优先级排序报告)
+```
+
+---
+
+#### I. 常用参数速查
+
+| 脚本 | 关键参数 | 说明 |
+|------|----------|------|
+| `train_pipeline.py` | `--model` | 模型变体: `yolo11{m,s}-EMA-SimAM` / `yolo11m-P2-SimAM` |
+| | `--stages` | 阶段列表: `1a 1b 2 3 4` 或 `5` |
+| | `--device` | GPU 编号，`0` 或 `cpu` |
+| | `--batch` | 覆盖 batch size（默认按模型自动选择） |
+| | `--output` | 固定输出目录（否则自动生成时间戳目录） |
+| | `--pretrained` | 手动指定预训练权重路径 |
+| | `--dry-run` | 打印计划不执行 |
+| `generate_native_crops.py` | `--crop-size` | `1024` (Stage 2) 或 `1280` (Stage 3-5) |
+| | `--negatives-per-image` | 负样本密度，默认 25 |
+| | `--balance` | 少数类过采样 |
+| | `--debiasing` | 位置去偏置（防位置过拟合） |
+| `collect_hard_negatives.py` | `--conf` | FP 最低置信度，默认 0.30 |
+| | `--iou-thresh` | 与 GT 的最大 IoU 才算 FP，默认 0.10 |
+| `calibrate_thresholds.py` | `--target-precision` | 目标 Precision，默认 0.85 |
+| | `--target-recall` | 目标 Recall，默认 0.80 |
+
 ---
 
 ### 缺陷类别速查表
