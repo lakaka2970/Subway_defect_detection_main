@@ -22,7 +22,9 @@
 # ============================================================================
 
 # ── 数据集 ──
-data: data/subway_crops/subway_crops.yaml
+path: data/subway_crops
+train: train/images
+val: val/images
 nc: 7
 names: ["VHBNM", "VHBNL", "SVHBNM", "SVHBNL", "SVHTNL", "CBHPM", "CBVPM"]
 

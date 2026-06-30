@@ -13,7 +13,7 @@
 # This model pairs with yolo11m-P2-SimAM.yaml for WBF ensemble fusion.
 
 # Parameters
-nc: 18
+nc: 7
 scales:
   m: [0.50, 1.00, 512]
 
