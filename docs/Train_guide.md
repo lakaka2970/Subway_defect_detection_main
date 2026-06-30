@@ -344,9 +344,16 @@ python scripts/multi_source_pretrain_yaml.py
 #### E. 一键训练（全程自动）
 
 ```bash
-# 完整五阶段训练（1A → 1B → 2 → 3 → 4）
+# 一键训练 Stage 1A → 1B → 2 → 3 → 4（共 4 个训练阶段，不含 Stage 5）
 # 自动完成: 安全检查 → 参数调优 → 配置生成 → 逐阶段训练 → 每类指标日志
 python scripts/train_pipeline.py \
+    --model yolo11m-EMA-SimAM \
+    --device 0
+
+# 一键训练 + Stage 5 训练（注意: 仅执行训练，不含难负样本收集和混入！）
+# 难负样本收集+混入+训练+校准 的完整流程见下方 § G
+python scripts/train_pipeline.py \
+    --stages 1a 1b 2 3 4 5 \
     --model yolo11m-EMA-SimAM \
     --device 0
 ```
