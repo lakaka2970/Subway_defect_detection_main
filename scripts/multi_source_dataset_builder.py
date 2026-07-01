@@ -452,19 +452,23 @@ def _validate_download_dir(dest_dir: Path, key: str = "") -> bool:
     if not dest_dir.exists() or not dest_dir.is_dir():
         return False
 
-    # Collect all files (recursive, up to 2 levels)
-    all_files: List[Path] = []
-    for item in dest_dir.iterdir():
-        if item.is_file():
-            all_files.append(item)
-        elif item.is_dir() and not item.name.startswith("."):
-            for sub in item.iterdir():
-                if sub.is_file():
-                    all_files.append(sub)
-                elif sub.is_dir() and not sub.name.startswith("."):
-                    for sub2 in sub.iterdir():
-                        if sub2.is_file():
-                            all_files.append(sub2)
+    # Collect all files up to 5 levels deep.
+    # (kagglehub downloads often wrap the dataset in a container directory
+    #  like NEU-DET/train/images/file.jpg — 4 levels from dest_dir.)
+    def _collect_files(base: Path, depth: int = 0, max_depth: int = 5) -> List[Path]:
+        files: List[Path] = []
+        if depth > max_depth or not base.is_dir():
+            return files
+        for entry in base.iterdir():
+            if entry.name.startswith("."):
+                continue
+            if entry.is_file():
+                files.append(entry)
+            elif entry.is_dir() and depth < max_depth:
+                files.extend(_collect_files(entry, depth + 1, max_depth))
+        return files
+
+    all_files = _collect_files(dest_dir)
 
     if not all_files:
         return False  # empty directory
@@ -2183,7 +2187,11 @@ class DatasetBuilder:
                         print(ok(f"[{key}] Downloaded via kagglehub"))
                         return dest_dir
                     else:
-                        print(warn(f"[{key}] kagglehub download invalid, cleaning up..."))
+                        # Diagnostic: show what was actually downloaded
+                        found_items = list(dest_dir.rglob("*"))
+                        sample = [str(p.relative_to(dest_dir)) for p in found_items[:20]]
+                        print(warn(f"[{key}] kagglehub download invalid. "
+                                   f"Contents ({len(found_items)} items): {sample}"))
                         shutil.rmtree(dest_dir)
                         dest_dir.mkdir(parents=True, exist_ok=True)
             except Exception as exc:

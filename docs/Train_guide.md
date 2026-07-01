@@ -280,21 +280,20 @@ python scripts/multi_source_dataset_builder.py                    # 下载缺失
 ```
 
 ```bash
-# B3. 生成原生分辨率 crop（所有 Stage 2-5 的训练数据）
-#     Stage 2 需要 1024px 版本（与公开数据集分辨率一致）
+# B3. 生成原生分辨率 crop（所有 Stage 3-5 的训练数据）
+#     Stage 3-5 使用 1280px 版本（主训练分辨率）
+#     默认读取 data/Defect_dataset/images/train + data/Defect_dataset/labels/train
 python scripts/generate_native_crops.py \
-    --data data/Defect_dataset/defect_data.yaml \
-    --output data/subway_crops_1024 \
-    --crop-size 1024 \
+    --output data/subway_crops \
+    --crop-size 1280 \
     --negatives-per-image 25 \
     --balance \
     --debiasing
 
-#     Stage 3-5 使用 1280px 版本（主训练分辨率）
+#     如需 1024px 版本（用于实验对比）
 python scripts/generate_native_crops.py \
-    --data data/Defect_dataset/defect_data.yaml \
-    --output data/subway_crops \
-    --crop-size 1280 \
+    --output data/subway_crops_1024 \
+    --crop-size 1024 \
     --negatives-per-image 25 \
     --balance \
     --debiasing
