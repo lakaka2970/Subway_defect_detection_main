@@ -41,11 +41,16 @@ dependencies = [
     "uvicorn>=0.24.0",
     "pydantic>=2.5.0",
     "ultralytics>=8.0.0",
+    "kagglehub>=0.1.0",
 ]
 
 [project.optional-dependencies]
 test = [
     "pytest>=7.4.0",
+]
+download = [
+    "kaggle>=1.6.0",        # Kaggle CLI — kaggle datasets download (needs API auth)
+    "kagglehub>=0.1.0",     # already in core, repeated for clarity
 ]
 
 [project.scripts]

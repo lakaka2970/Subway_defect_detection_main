@@ -23,6 +23,26 @@ pip install torch torchvision --index-url https://download.pytorch.org/whl/cu121
 # Install the project in editable mode (pulls in all dependencies)
 pip install -e .
 
+# ── Install Kaggle tools for multi-source dataset downloads ──────────
+# kagglehub: official Python library (auto-installed as core dependency)
+# kaggle: CLI tool (optional, needs API key set up first)
+pip install -e ".[download]" 2>/dev/null || pip install kaggle
+echo ""
+echo "=== Kaggle API Setup ==="
+if [ -f "$HOME/.kaggle/kaggle.json" ]; then
+    echo "[OK] Kaggle API key found at ~/.kaggle/kaggle.json"
+else
+    echo "[INFO] Kaggle CLI needs an API key to download datasets."
+    echo "  To set up:"
+    echo "    1. Go to https://www.kaggle.com/settings"
+    echo "    2. Click 'Create New Token' → downloads kaggle.json"
+    echo "    3. mkdir -p ~/.kaggle && mv kaggle.json ~/.kaggle/"
+    echo "    4. chmod 600 ~/.kaggle/kaggle.json"
+    echo ""
+    echo "  Or use kagglehub (no auth needed for public datasets):"
+    echo "    python -c \"import kagglehub; kagglehub.dataset_download('kaustubhdikshit/neu-surface-defect-database')\""
+fi
+
 # Verify GPU
 python -c "
 import torch
