@@ -20,8 +20,10 @@ Supports both full-source-image mode (Defect_dataset) and crop-level mode
 (subway_crops). In crop mode, augmentations are balanced per defect class
 to prevent minority classes from being underrepresented.
 
-Performance: Uses multiprocessing (default: all CPU cores) for parallel
-image I/O + augmentation.
+Performance: Uses thread-pool parallelism (default: 8 workers) — OpenCV
+releases the GIL during imread/imwrite and scene augmentations never touch
+CUDA, so threads give the same throughput as processes without the
+per-process memory overhead that causes OOM on cloud instances.
 
 Usage:
     # Original full-image mode
@@ -37,25 +39,15 @@ Usage:
 """
 
 import argparse
-import multiprocessing
 import os
 import random
 import shutil
-from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor, as_completed
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Dict, List, Tuple
 
 import cv2
 from tqdm import tqdm
-
-# Force "spawn" on Linux — "fork" deadlocks when OpenCV is built with CUDA
-# (common on AutoDL / cloud GPU instances).  Must happen BEFORE any CUDA-
-# adjacent library is imported.
-if hasattr(multiprocessing, "set_start_method"):
-    try:
-        multiprocessing.set_start_method("spawn", force=True)
-    except RuntimeError:
-        pass  # already set by another component
 
 # Import scene augmentations — try package import first
 try:
@@ -290,22 +282,32 @@ def main() -> None:
     use_parallel = _USE_PACKAGE_IMPORT and workers > 1 and not args.no_parallel
 
     if use_parallel:
-        # ── spawn-safe parallel mode ──────────────────────────────────
-        print("         [parallel mode — spawn start method]\n")
-        with ProcessPoolExecutor(max_workers=workers) as executor:
-            futures = {executor.submit(_process_one_image, task): task for task in tasks}
+        # ── Thread-parallel mode ─────────────────────────────────────────
+        # Threads are safe here: scene augmentations never touch CUDA, and
+        # OpenCV's imread/imwrite release the GIL.  ThreadPoolExecutor uses
+        # shared memory → no per-worker Python-interpreter overhead that
+        # causes OOM with ProcessPoolExecutor on small cloud instances.
+        print(f"         [thread-pool mode — {workers} workers]\n")
+
+        # Submit tasks in batches to keep the memory of in-flight futures
+        # bounded (1134 futures × pickled args would also spike RAM).
+        _BATCH = max(workers * 8, 64)
+        with ThreadPoolExecutor(max_workers=workers) as executor:
             with tqdm(total=len(tasks), desc="Scene augmentations", unit="img") as pbar:
-                for future in as_completed(futures):
-                    try:
-                        gen, cls_id = future.result()
-                        generated += gen
-                        if cls_id >= 0:
-                            per_class_generated[cls_id] = \
-                                per_class_generated.get(cls_id, 0) + gen
-                    except Exception as e:
-                        img_path = futures[future][0]
-                        print(f"  WARNING: {img_path.name} failed: {e}")
-                    pbar.update(1)
+                for i in range(0, len(tasks), _BATCH):
+                    batch = tasks[i:i + _BATCH]
+                    futures = {executor.submit(_process_one_image, t): t for t in batch}
+                    for future in as_completed(futures):
+                        try:
+                            gen, cls_id = future.result()
+                            generated += gen
+                            if cls_id >= 0:
+                                per_class_generated[cls_id] = \
+                                    per_class_generated.get(cls_id, 0) + gen
+                        except Exception as e:
+                            img_path = futures[future][0]
+                            print(f"  WARNING: {img_path.name} failed: {e}")
+                        pbar.update(1)
     else:
         # ── Sequential fallback ───────────────────────────────────────
         if not _USE_PACKAGE_IMPORT:
