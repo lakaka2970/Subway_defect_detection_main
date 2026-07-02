@@ -200,6 +200,12 @@ def main() -> None:
         "--minority-multiplier", type=float, default=1.8,
         help="Extra augmentations multiplier for classes below median count (default: 1.8)",
     )
+    parser.add_argument(
+        "--clean", action="store_true",
+        help="Delete all previously-generated _aug*.jpg / _aug*.txt files before "
+             "generating new variants.  Use this when earlier runs were killed "
+             "mid-flight and left thousands of stale images on disk.",
+    )
     args = parser.parse_args()
 
     # Clamp workers to safe range
@@ -214,8 +220,27 @@ def main() -> None:
         print(f"ERROR: {images_dir} not found. Run split_dataset.py first.")
         return
 
+    # ── Cleanup of stale augmentations from previous killed runs ─────────
+    if args.clean:
+        _AUG_GLOB = ("*_aug*.*",)
+        stale_imgs = list(images_dir.glob("*_aug*.jpg"))
+        stale_lbls = list(labels_dir.glob("*_aug*.txt")) if labels_dir.is_dir() else []
+        stale_total = len(stale_imgs) + len(stale_lbls)
+        if stale_total > 0:
+            print(f"  [clean] Removing {len(stale_imgs)} stale augmented images "
+                  f"and {len(stale_lbls)} stale labels...")
+            for f in stale_imgs:
+                f.unlink()
+            for f in stale_lbls:
+                f.unlink()
+            print(f"  [clean] Done — {stale_total} files removed.\n")
+
     image_paths = sorted(images_dir.glob("*.jpg"))
     originals = [p for p in image_paths if _is_original(p.stem)]
+    n_stale = len(image_paths) - len(originals)
+    if n_stale > len(originals):
+        print(f"  [WARN] {n_stale} stale augmented files detected "
+              f"({len(originals)} originals).  Re-run with --clean to remove them.\n")
 
     # ── Class-aware balancing logic ────────────────────────────────────
     if args.class_aware:
