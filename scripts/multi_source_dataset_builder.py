@@ -526,15 +526,22 @@ def _find_in_autodl_pub(globs: List[str]) -> Optional[Path]:
     return None
 
 
-def _make_symlink_tree(src_dir: Path, dst_dir: Path, pattern: str = "*") -> int:
+def _make_symlink_tree(src_dir: Path, dst_dir: Path, pattern: str = "*",
+                       prefix: str = "") -> int:
     """Symlink all files matching *pattern* from *src_dir* into *dst_dir*.
+
+    If *prefix* is given, it is prepended to each link name (e.g.
+    ``neu_det_img_01.jpg``) so that files from different datasets never
+    collide in the flat ``mixed_pretrain`` namespace.
+
     Returns the count of files linked.
     """
     dst_dir.mkdir(parents=True, exist_ok=True)
     count = 0
     for f in sorted(src_dir.glob(pattern)):
         if f.is_file():
-            link = dst_dir / f.name
+            name = f"{prefix}_{f.name}" if prefix else f.name
+            link = dst_dir / name
             if not link.exists():
                 link.symlink_to(f.resolve())
             count += 1
@@ -2418,15 +2425,15 @@ class DatasetBuilder:
                 lbl_dst = mixed / "labels" / sp
 
                 if img_src.is_dir():
-                    n = _make_symlink_tree(img_src, img_dst, "*.jpg")
-                    n += _make_symlink_tree(img_src, img_dst, "*.png")
+                    n = _make_symlink_tree(img_src, img_dst, "*.jpg", prefix=key)
+                    n += _make_symlink_tree(img_src, img_dst, "*.png", prefix=key)
                     if sp == "train":
                         total_train_imgs += n
                     else:
                         total_val_imgs += n
 
                 if lbl_src.is_dir():
-                    n = _make_symlink_tree(lbl_src, lbl_dst, "*.txt")
+                    n = _make_symlink_tree(lbl_src, lbl_dst, "*.txt", prefix=key)
                     # Count boxes
                     for lbl in lbl_src.glob("*.txt"):
                         lines = lbl.read_text().strip().splitlines()
