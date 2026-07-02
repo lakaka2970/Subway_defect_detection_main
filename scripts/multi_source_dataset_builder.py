@@ -2358,6 +2358,15 @@ class DatasetBuilder:
                 outputs[key] = out
                 continue
 
+            # Clean stale conversion output to prevent train/val cross-
+            # contamination from earlier (possibly buggy) runs.
+            if key != "coco" and out.exists():
+                for sub in ("images", "labels"):
+                    p = out / sub
+                    if p.exists():
+                        shutil.rmtree(p)
+                        p.mkdir(parents=True, exist_ok=True)
+
             success = False
 
             if key == "coco":
