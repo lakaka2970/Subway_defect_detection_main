@@ -921,14 +921,20 @@ def convert_voc_dataset(
 
     # Match images to annotations
     matched_stems: List[str] = []
+    seen_stems: Set[str] = set()
     for stem in sorted(xml_files):
         if stem in img_files:
-            matched_stems.append(stem)
+            if stem not in seen_stems:
+                matched_stems.append(stem)
+                seen_stems.add(stem)
         else:
             # Try case-insensitive match
             img_lower = {k.lower(): k for k in img_files}
             if stem.lower() in img_lower:
-                matched_stems.append(img_lower[stem.lower()])
+                resolved = img_lower[stem.lower()]
+                if resolved not in seen_stems:
+                    matched_stems.append(resolved)
+                    seen_stems.add(resolved)
 
     if not matched_stems:
         print(fail(f"[{key}] No matched image-annotation pairs found!"))
