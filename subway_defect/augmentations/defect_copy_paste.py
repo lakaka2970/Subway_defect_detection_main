@@ -33,6 +33,7 @@ from typing import Dict, List, Optional, Set, Tuple
 
 import cv2
 import numpy as np
+from tqdm import tqdm
 
 # ── Constants ────────────────────────────────────────────────────────────────
 
@@ -190,18 +191,16 @@ def copy_paste_defects(
     random.seed(seed)
     np.random.seed(seed)
 
-    # ── Load all images and labels ─────────────────────────────────────
-    print("Loading images and labels...")
+    # ── Prepare image index ──────────────────────────────────────────────
     img_paths = sorted(img_dir.glob("*.jpg")) + sorted(img_dir.glob("*.png"))
     if not img_paths:
         print(f"ERROR: No images found in {img_dir}")
         return {}
 
-    all_data: List[Tuple[Path, np.ndarray, List[Tuple[int, float, float, float, float]]]] = []
-    for imp in img_paths:
-        img = cv2.imread(str(imp))
-        if img is None:
-            continue
+    print(f"  Found {len(img_paths)} images in {img_dir}")
+
+    # ── Helper: load labels for one image ────────────────────────────────
+    def _load_one_label(imp: Path) -> List[Tuple[int, float, float, float, float]]:
         lbl_path = label_dir / f"{imp.stem}.txt"
         labels: List[Tuple[int, float, float, float, float]] = []
         if lbl_path.exists():
@@ -213,21 +212,29 @@ def copy_paste_defects(
                                        float(parts[3]), float(parts[4])))
                     except (ValueError, IndexError):
                         continue
-        all_data.append((imp, img, labels))
+        return labels
 
-    print(f"  Loaded {len(all_data)} images")
-
-    # ── Collect all extractable small-defect patches ───────────────────
-    print("Extracting small-defect patches...")
+    # ── Pass 1: scan images one-at-a-time to extract small-defect patches ──
+    print("Extracting small-defect patches (streaming)...")
     patch_pool: List[Tuple[np.ndarray, np.ndarray, int, Tuple[int, int]]] = []
     # (patch_img, mask, cls_id, (orig_w, orig_h))
 
-    for _, img, labels in all_data:
+    for i, imp in enumerate(img_paths):
+        img = cv2.imread(str(imp))
+        if img is None:
+            continue
+        labels = _load_one_label(imp)
         h, w = img.shape[:2]
         patches = _extract_defect_patches(img, labels, w, h, min_bbox_size, max_bbox_size)
         for patch, mask, cls_id in patches:
             patch_h, patch_w = patch.shape[:2]
             patch_pool.append((patch, mask, cls_id, (patch_w, patch_h)))
+        # Release image memory immediately — we only need the patches
+        del img, labels
+
+        if (i + 1) % 500 == 0:
+            print(f"    Scanned {i + 1}/{len(img_paths)} images, "
+                  f"{len(patch_pool)} patches collected")
 
     print(f"  Extracted {len(patch_pool)} small-defect patches "
           f"(size range: {min_bbox_size}-{max_bbox_size} px)")
@@ -237,7 +244,7 @@ def copy_paste_defects(
               "Check min/max bbox size settings.")
         return {"patches_extracted": 0, "images_augmented": 0, "total_pastes": 0}
 
-    # ── Apply copy-paste to target images ──────────────────────────────
+    # ── Pass 2: apply copy-paste one image at a time ────────────────────
     if not dry_run:
         output_img_dir.mkdir(parents=True, exist_ok=True)
         output_label_dir.mkdir(parents=True, exist_ok=True)
@@ -245,7 +252,11 @@ def copy_paste_defects(
     images_augmented = 0
     total_pastes = 0
 
-    for imp, img, labels in all_data:
+    for imp in tqdm(img_paths, desc="Copy-paste augmentation", unit="img"):
+        img = cv2.imread(str(imp))
+        if img is None:
+            continue
+        labels = _load_one_label(imp)
         h, w = img.shape[:2]
 
         # Copy original (all images go to output, even if not augmented)
@@ -262,6 +273,7 @@ def copy_paste_defects(
                             for c, xc, yc, w_, h_ in labels]
                 lbl_out.write_text("\n".join(lbl_lines) + "\n" if lbl_lines else "\n",
                                    encoding="utf-8")
+            del img, labels
             continue
 
         # Get existing bboxes in pixel coords for IoU checking
@@ -329,9 +341,11 @@ def copy_paste_defects(
                                encoding="utf-8")
 
         images_augmented += 1
+        # Release per-image memory
+        del img, augmented_img, labels, new_labels
 
     stats = {
-        "total_images": len(all_data),
+        "total_images": len(img_paths),
         "patches_extracted": len(patch_pool),
         "images_augmented": images_augmented,
         "total_pastes": total_pastes,
@@ -339,7 +353,7 @@ def copy_paste_defects(
     }
 
     print(f"\n  Copy-Paste augmentation complete:")
-    print(f"    Images augmented: {images_augmented}/{len(all_data)}")
+    print(f"    Images augmented: {images_augmented}/{len(img_paths)}")
     print(f"    Total pastes:     {total_pastes}")
     print(f"    Avg pastes/img:   {stats['avg_pastes_per_image']:.1f}")
 
