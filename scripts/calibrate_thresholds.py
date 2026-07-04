@@ -214,9 +214,17 @@ def calibrate_thresholds(
 
     val_lbl_dir = val_img_dir.parent / "labels"
     if not val_lbl_dir.is_dir():
-        # Try alternate layout: dataset_root/labels/split_name/
-        val_lbl_dir = val_img_dir.parent.parent / "labels" / val_img_dir.parent.name
-    if not val_lbl_dir.is_dir():
+        # Try alternate layouts (defect_data.yaml uses images/{split}/ + labels/{split}/;
+        # subway_crops.yaml uses {split}/images/ + {split}/labels/)
+        for cand in [
+            val_img_dir.parent.parent / "labels" / val_img_dir.name,       # images/val → labels/val
+            val_img_dir.parent.parent / "labels" / val_img_dir.parent.name, # val/images → labels/val
+            val_img_dir.parent.parent / "labels",                           # flat labels/
+        ]:
+            if cand.is_dir():
+                val_lbl_dir = cand
+                break
+    if not val_lbl_dir or not val_lbl_dir.is_dir():
         print(f"ERROR: Label directory not found")
         sys.exit(1)
 
