@@ -48,6 +48,14 @@ from typing import Dict, List, Optional, Tuple
 import numpy as np
 from tqdm import tqdm
 
+# Use Ultralytics' native box_iou — guaranteed consistent with model.val()
+try:
+    from ultralytics.utils.metrics import box_iou as _ultra_box_iou
+    import torch
+    HAS_ULTRA_IOU = True
+except ImportError:
+    HAS_ULTRA_IOU = False
+
 # ── Constants ────────────────────────────────────────────────────────────────
 
 DEFAULT_OUTPUT = Path("data/calibrated_thresholds")
@@ -107,6 +115,25 @@ def _load_yolo_labels(label_dir: Path) -> Dict[str, List[Tuple[int, float, float
         if entries:
             labels[stem] = entries
     return labels
+
+
+def _box_iou_pixel(
+    box1: np.ndarray, box2: np.ndarray,
+) -> float:
+    """Compute IoU between two boxes in pixel (x1,y1,x2,y2) format."""
+    x1 = max(box1[0], box2[0])
+    y1 = max(box1[1], box2[1])
+    x2 = min(box1[2], box2[2])
+    y2 = min(box1[3], box2[3])
+    if x2 <= x1 or y2 <= y1:
+        return 0.0
+    inter = (x2 - x1) * (y2 - y1)
+    area_a = (box1[2] - box1[0]) * (box1[3] - box1[1])
+    area_b = (box2[2] - box2[0]) * (box2[3] - box2[1])
+    union = area_a + area_b - inter
+    if union <= 0:
+        return 0.0
+    return inter / union
 
 
 def _f_beta_score(precision: float, recall: float, beta: float = 2.0) -> float:
@@ -205,7 +232,7 @@ def calibrate_thresholds(
     print(f"  GT boxes per class: {dict(gt_per_class)}")
 
     # ── Run inference and collect (conf, cls, is_TP) ───────────────────
-    print(f"\nRunning inference...")
+    print(f"\nRunning inference on {val_img_dir}...")
     results = model.predict(
         source=str(val_img_dir),
         imgsz=imgsz,
@@ -219,50 +246,116 @@ def calibrate_thresholds(
     # Per-class: list of (confidence, is_TP) tuples
     per_class_preds: Dict[int, List[Tuple[float, bool]]] = defaultdict(list)
     total_dets = 0
+    total_tp = 0
+    stem_matched = 0
+    stem_missed = 0
 
     for result in tqdm(results, desc="Collecting predictions", unit="img"):
         if result is None or result.boxes is None:
             continue
 
         stem = Path(result.path).stem
-        gts = gt_labels.get(stem, [])
+        gts = gt_labels.get(stem)
+        if gts is None:
+            # No GT labels for this image — all detections are FPs
+            stem_missed += 1
+        else:
+            stem_matched += 1
+
+        if gts is None:
+            gts = []
 
         boxes = result.boxes
         if boxes is None or len(boxes) == 0:
             continue
 
-        for i in range(len(boxes)):
-            cls_id = int(boxes.cls[i].item())
-            conf = float(boxes.conf[i].item())
-            xywhn = boxes.xywhn[i].tolist()
+        # Get image dimensions for pixel-space matching
+        img_h, img_w = result.orig_shape
+
+        # Convert GT boxes from normalised (xc,yc,w,h) → pixel (x1,y1,x2,y2)
+        gt_xyxy_list = []
+        gt_cls_list = []
+        for gt_cls, gt_xc, gt_yc, gt_w, gt_h in gts:
+            if gt_cls >= NC:
+                continue
+            x1 = max(0.0, (gt_xc - gt_w / 2) * img_w)
+            y1 = max(0.0, (gt_yc - gt_h / 2) * img_h)
+            x2 = min(img_w, (gt_xc + gt_w / 2) * img_w)
+            y2 = min(img_h, (gt_yc + gt_h / 2) * img_h)
+            gt_xyxy_list.append([x1, y1, x2, y2])
+            gt_cls_list.append(gt_cls)
+
+        if not gt_xyxy_list:
+            # No valid GT for this image — all detections are FPs
+            for i in range(len(boxes)):
+                cls_id = int(boxes.cls[i].item())
+                conf = float(boxes.conf[i].item())
+                if cls_id < NC:
+                    per_class_preds[cls_id].append((conf, False))
+                    total_dets += 1
+            continue
+
+        # Get prediction boxes in pixel xyxy format
+        # boxes.xyxy is already in pixel coordinates of orig_shape
+        pred_xyxy = boxes.xyxy.cpu().numpy()  # (N, 4) in pixel coords
+        pred_cls = boxes.cls.cpu().numpy().astype(int)  # (N,)
+        pred_conf = boxes.conf.cpu().numpy()  # (N,)
+
+        # Build GT tensor for box_iou
+        gt_tensor = np.array(gt_xyxy_list, dtype=np.float32)  # (M, 4)
+
+        # Track which GTs have been matched (prevent double-counting)
+        gt_matched = [False] * len(gt_xyxy_list)
+
+        # Process detections sorted by confidence (high → low)
+        det_order = np.argsort(-pred_conf)
+        for idx in det_order:
+            cls_id = int(pred_cls[idx])
+            conf = float(pred_conf[idx])
             total_dets += 1
 
             if cls_id >= NC:
                 continue
 
-            # Match against GTs of the same class
             is_tp = False
             best_iou = 0.0
-            matched_gt_idx = -1
-            for gt_idx, (gt_cls, gt_xc, gt_yc, gt_w, gt_h) in enumerate(gts):
+            best_gt = -1
+
+            # Find best unmatched GT of the same class
+            for gt_idx, gt_cls in enumerate(gt_cls_list):
+                if gt_matched[gt_idx]:
+                    continue
                 if gt_cls != cls_id:
                     continue
-                iou = _box_iou(
-                    (xywhn[0], xywhn[1], xywhn[2], xywhn[3]),
-                    (gt_xc, gt_yc, gt_w, gt_h),
-                )
+
+                # Compute IoU between this pred box and GT box (both in pixel xyxy)
+                pred_box = pred_xyxy[idx:idx+1]  # (1, 4)
+                gt_box = gt_tensor[gt_idx:gt_idx+1]  # (1, 4)
+
+                if HAS_ULTRA_IOU:
+                    iou = float(_ultra_box_iou(
+                        torch.from_numpy(pred_box),
+                        torch.from_numpy(gt_box),
+                    )[0, 0])
+                else:
+                    iou = _box_iou_pixel(
+                        pred_box[0], gt_box[0],
+                    )
+
                 if iou > best_iou:
                     best_iou = iou
-                    matched_gt_idx = gt_idx
+                    best_gt = gt_idx
 
-            if best_iou >= iou_threshold:
+            if best_iou >= iou_threshold and best_gt >= 0:
                 is_tp = True
-                # Remove matched GT to prevent double-counting
-                gts.pop(matched_gt_idx)
+                gt_matched[best_gt] = True
+                total_tp += 1
 
             per_class_preds[cls_id].append((conf, is_tp))
 
     print(f"  Total detections collected: {total_dets}")
+    print(f"  Total TPs: {total_tp}")
+    print(f"  Images with GT: {stem_matched}, without GT: {stem_missed}")
 
     # ── Per-class threshold search ─────────────────────────────────────
     thresholds_range = np.arange(conf_start, conf_end + conf_step, conf_step)
