@@ -1,0 +1,58 @@
+# Stage 1A: Public Defect Neck/Head Warmup
+# ========================================
+# Target: Train neck + attention + detection head on generic_defect (1 class).
+# Init: COCO yolo11m.pt (backbone frozen deep — layers 0-10).
+# Datasets: KolektorSDD2 + RSDDs + NEU-DET + GC10-DET.
+# Classes: 1 (generic_defect).
+#
+# Strategy:
+# - Freeze all backbone layers → neck/head learn industrial anomaly textures.
+# - AdamW with cos_lr for smooth convergence.
+# - mosaic=0.2 for mild augmentation to bridge domain gap.
+# - patience=20 to stop early when neck/head converge.
+#
+# Output: weights/stage1a_public_head.pt.
+# Next:  Stage 1B (unfreeze backbone deep layers, continue on generic_defect).
+
+path: /root/autodl-tmp/projects/Subway_defect_detection_main/data/multi_datasets/mixed_pretrain
+train: images/train
+val: images/val
+nc: 1
+names:
+- generic_defect
+epochs: 40
+imgsz: 1024
+batch: 16
+optimizer: AdamW
+lr0: 0.001
+lrf: 0.05
+cos_lr: true
+weight_decay: 0.0005
+warmup_epochs: 3
+warmup_bias_lr: 0.001
+mosaic: 0.2
+mixup: 0.0
+copy_paste: 0.0
+erasing: 0.0
+hsv_h: 0.015
+hsv_s: 0.5
+hsv_v: 0.5
+degrees: 3.0
+translate: 0.1
+scale: 0.6
+shear: 0.5
+perspective: 0.0001
+close_mosaic: 15
+patience: 20
+freeze:
+- 0
+- 1
+- 2
+- 3
+- 4
+- 5
+- 6
+- 7
+- 8
+- 9
+- 10

@@ -34,6 +34,7 @@ from subway_defect.train.configs import (
     COCO_PRETRAINED,
     DEFECT_FINETUNE_CONFIG,
     DEFECT_FULL_TRAIN_CONFIG,
+    DEFECT_HARD_NEGATIVE_V2_CONFIG,
     DEFECT_WARMUP_CONFIG,
     HardwareProfile,
     apply_hardware_profile,
@@ -75,6 +76,8 @@ def main():
                         help="Skip C2 full training stage")
     parser.add_argument("--skip_finetune", action="store_true",
                         help="Skip C3 fine-tune stage")
+    parser.add_argument("--stage5_hn_v2", action="store_true",
+                        help="Run Stage 5 v2 hard-negative fine-tune after selected stages")
 
     # Hardware overrides
     parser.add_argument("--workers", type=int, default=None,
@@ -197,6 +200,26 @@ def main():
         final = Path(model3.trainer.save_dir) / "weights" / "best.pt"
     else:
         final = ckpt2
+
+    # -- Stage 5 v2: Hard-negative fine-tune --
+    if args.stage5_hn_v2:
+        print("=" * 60)
+        print("Stage 5 v2: Hard-Negative Fine-Tune")
+        print("=" * 60)
+        hn = {**DEFECT_HARD_NEGATIVE_V2_CONFIG, **base}
+        hn = apply_hardware_profile(hn, profile, args.model)
+        if args.workers is not None:
+            hn["workers"] = args.workers
+        if args.batch is not None:
+            hn["batch"] = args.batch
+        if args.no_amp:
+            hn["amp"] = False
+
+        _check_gpu_memory(required_gb=8.0)
+
+        model_hn = YOLO(str(final))
+        model_hn.train(name=f"{args.name}_{timestamp}_stage5_hn_v2", **hn)
+        final = Path(model_hn.trainer.save_dir) / "weights" / "best.pt"
 
     print("=" * 60)
     print(f"Training complete. Final model: {final}")

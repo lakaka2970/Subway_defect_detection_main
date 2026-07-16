@@ -7,14 +7,17 @@ Stage 2: YOLO11s/m-EMA-SimAM detects defects on full-res ROI tiles.
 
 import time
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Mapping, Optional, Union
 
 import cv2
 import numpy as np
 import torch
 
 from .slicer import SmartSlicer
-from .utils import box_iou
+from .utils import box_iou, load_class_thresholds
+
+
+StateReasoner = Callable[[np.ndarray, Dict[str, Any]], Dict[str, Any]]
 
 
 class TwoStagePipeline:
@@ -39,6 +42,11 @@ class TwoStagePipeline:
         overlap: float = 0.15,
         roi_conf: float = 0.15,
         defect_conf: float = 0.40,
+        defect_thresholds: Optional[Union[Mapping[str, float], str, Path]] = None,
+        state_reasoner: Optional[StateReasoner] = None,
+        state_threshold: float = 0.50,
+        yolo_score_weight: float = 0.60,
+        state_score_weight: float = 0.40,
         downsample_ratio: int = 8,
         device: str = "0",
     ):
@@ -53,10 +61,26 @@ class TwoStagePipeline:
         self.overlap = overlap
         self.roi_conf = roi_conf
         self.defect_conf = defect_conf
+        self.defect_thresholds = self._resolve_thresholds(defect_thresholds)
+        self.state_reasoner = state_reasoner
+        self.state_threshold = state_threshold
+        self.yolo_score_weight = yolo_score_weight
+        self.state_score_weight = state_score_weight
         self.downsample_ratio = downsample_ratio
         self.device = device
 
         self.slicer = SmartSlicer(slice_size=slice_size, overlap=overlap)
+
+    @staticmethod
+    def _resolve_thresholds(
+        thresholds: Optional[Union[Mapping[str, float], str, Path]],
+    ) -> Dict[str, float]:
+        """Normalize optional per-class thresholds."""
+        if thresholds is None:
+            return {}
+        if isinstance(thresholds, (str, Path)):
+            return load_class_thresholds(thresholds)
+        return {str(k): float(v) for k, v in thresholds.items()}
 
     def infer(self, image: np.ndarray) -> Dict[str, Any]:
         """Run two-stage inference on a single image.
@@ -136,30 +160,65 @@ class TwoStagePipeline:
 
         all_defects = []
         for tile, row, col, x0, y0 in tiles:
+            infer_conf = self.defect_conf
+            if self.defect_thresholds:
+                infer_conf = min(infer_conf, min(self.defect_thresholds.values()))
+
             results = self.defect_model(
-                tile, conf=self.defect_conf, verbose=False, device=self.device
+                tile, conf=infer_conf, verbose=False, device=self.device
             )
             if len(results) == 0 or results[0].boxes is None:
                 continue
             boxes = results[0].boxes
             for i in range(len(boxes.cls)):
+                class_id = int(boxes.cls[i])
+                class_name = self.defect_model.names.get(class_id, str(class_id))
+                confidence = float(boxes.conf[i])
+                threshold = self.defect_thresholds.get(class_name, self.defect_conf)
+                if confidence < threshold:
+                    continue
+
                 x, y, bw, bh = boxes.xywh[i].cpu().numpy()
-                all_defects.append({
+                detection = {
                     "box": {
                         "x": float((x0 + x) / image.shape[1]),
                         "y": float((y0 + y) / image.shape[0]),
                         "w": float(bw / image.shape[1]),
                         "h": float(bh / image.shape[0]),
                     },
-                    "confidence": float(boxes.conf[i]),
-                    "class_id": int(boxes.cls[i]),
-                    "class_name": self.defect_model.names.get(
-                        int(boxes.cls[i]), str(int(boxes.cls[i]))),
+                    "confidence": confidence,
+                    "class_id": class_id,
+                    "class_name": class_name,
                     "source_tile": {"row": row, "col": col},
-                })
+                }
+                if self._reject_by_state_reasoner(tile, detection):
+                    continue
+                all_defects.append(detection)
 
         # Simple NMS to merge overlapping detections from adjacent tiles
         return self._merge_overlapping(all_defects)
+
+    def _reject_by_state_reasoner(self, tile, detection) -> bool:
+        """Apply optional state reasoner and update fused confidence."""
+        if self.state_reasoner is None:
+            return False
+
+        response = self.state_reasoner(tile, detection)
+        state = str(response.get("state", "")).lower()
+        state_conf = float(response.get("confidence", 0.0))
+        detection["state"] = state
+        detection["state_confidence"] = state_conf
+
+        if state in {"normal", "background", "negative"} and state_conf >= self.state_threshold:
+            return True
+
+        fused = (
+            self.yolo_score_weight * detection["confidence"]
+            + self.state_score_weight * state_conf
+        )
+        detection["yolo_confidence"] = detection["confidence"]
+        detection["confidence"] = float(fused)
+        return False
 
     def _merge_overlapping(self, defects, iou_threshold=0.5):
         """Merge duplicate detections from overlapping tile regions."""

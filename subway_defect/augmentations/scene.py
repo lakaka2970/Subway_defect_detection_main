@@ -111,6 +111,22 @@ def motion_blur(img: np.ndarray) -> np.ndarray:
     return cv2.filter2D(img, -1, kernel)
 
 
+def vibration_blur(img: np.ndarray) -> np.ndarray:
+    """Alias for high-frequency vehicle vibration blur."""
+    return motion_blur(img)
+
+
+def white_balance_shift(img: np.ndarray) -> np.ndarray:
+    """Simulate tunnel lighting color-temperature shifts."""
+    img = img.copy().astype(np.float32)
+    gains = np.array([
+        np.random.uniform(0.85, 1.15),
+        np.random.uniform(0.90, 1.10),
+        np.random.uniform(0.85, 1.20),
+    ], dtype=np.float32).reshape(1, 1, 3)
+    return (img * gains).clip(0, 255).astype(np.uint8)
+
+
 def weather_augment(img: np.ndarray) -> np.ndarray:
     """Apply random weather effect: fog or rain.
 

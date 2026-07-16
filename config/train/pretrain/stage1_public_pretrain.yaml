@@ -1,0 +1,47 @@
+# Stage 1 (Legacy): Public Industrial Defect Pretraining
+# ======================================================
+# Target: Let backbone/neck learn industrial anomaly textures (single stage).
+# Init: COCO yolo11m.pt.
+# Datasets: KolektorSDD2 + RSDDs + NEU-DET + GC10-DET.
+# Classes: 1 (generic_defect).
+#
+# Note: Prefer Stage 1A + 1B for better weight inheritance to Stage 2.
+# Output: weights/stage1_public_pretrain.pt.
+
+path: /root/autodl-tmp/projects/Subway_defect_detection_main/data/multi_datasets/mixed_pretrain
+train: images/train
+val: images/val
+nc: 1
+names:
+- generic_defect
+epochs: 120
+imgsz: 1024
+batch: 16
+optimizer: AdamW
+lr0: 0.001
+lrf: 0.02
+warmup_epochs: 10
+weight_decay: 0.0005
+cos_lr: true
+mosaic: 0.2
+mixup: 0.0
+copy_paste: 0.0
+erasing: 0.0
+degrees: 5.0
+translate: 0.1
+scale: 0.5
+shear: 1.0
+perspective: 0.0002
+close_mosaic: 30
+freeze:
+- 0
+- 1
+- 2
+- 3
+- 4
+- 5
+- 6
+- 7
+- 8
+- 9
+- 10

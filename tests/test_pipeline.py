@@ -1,6 +1,8 @@
 import numpy as np
 import pytest
 from subway_defect.pipeline.slicer import SmartSlicer
+from subway_defect.pipeline.two_stage import TwoStagePipeline
+from subway_defect.pipeline.utils import load_class_thresholds
 from subway_defect.pipeline.wbf_fusion import WBFFusion
 
 
@@ -93,6 +95,82 @@ class TestWBFFusion:
         fusion = WBFFusion()
         result = fusion.fuse([], [])
         assert result == []
+
+
+class _TensorLike:
+    def __init__(self, array):
+        self.array = np.asarray(array)
+
+    def cpu(self):
+        return self
+
+    def numpy(self):
+        return self.array
+
+    def __len__(self):
+        return len(self.array)
+
+    def __getitem__(self, index):
+        value = self.array[index]
+        if np.isscalar(value):
+            return value.item()
+        return _TensorLike(value)
+
+
+class _Boxes:
+    def __init__(self):
+        self.cls = _TensorLike([0, 1])
+        self.conf = _TensorLike([0.24, 0.24])
+        self.xywh = _TensorLike([[512, 512, 100, 100], [256, 256, 80, 80]])
+
+
+class _Result:
+    boxes = _Boxes()
+
+
+class _Model:
+    names = {0: "VHBNM", 1: "SVHBNM"}
+
+    def __call__(self, *args, **kwargs):
+        return [_Result()]
+
+
+class TestCascadeThresholds:
+    def test_load_class_thresholds_nested_schema(self, tmp_path):
+        p = tmp_path / "thresholds.json"
+        p.write_text('{"VHBNM": {"recommended_threshold": 0.2}}', encoding="utf-8")
+        assert load_class_thresholds(p) == {"VHBNM": 0.2}
+
+    def test_per_class_threshold_filters_detection(self):
+        pipeline = TwoStagePipeline(
+            roi_model=_Model(),
+            defect_model=_Model(),
+            defect_conf=0.05,
+            defect_thresholds={"VHBNM": 0.20, "SVHBNM": 0.30},
+            device="cpu",
+        )
+        img = np.zeros((1024, 1024, 3), dtype=np.uint8)
+
+        defects = pipeline._detect_defects(img, roi_boxes=None)
+
+        assert len(defects) == 1
+        assert defects[0]["class_name"] == "VHBNM"
+
+    def test_state_reasoner_rejects_normal_detection(self):
+        def reasoner(tile, detection):
+            return {"state": "normal", "confidence": 0.91}
+
+        pipeline = TwoStagePipeline(
+            roi_model=_Model(),
+            defect_model=_Model(),
+            defect_conf=0.05,
+            defect_thresholds={"VHBNM": 0.20, "SVHBNM": 0.20},
+            state_reasoner=reasoner,
+            device="cpu",
+        )
+        img = np.zeros((1024, 1024, 3), dtype=np.uint8)
+
+        assert pipeline._detect_defects(img, roi_boxes=None) == []
 
 
 class TestDeployment:

@@ -1,0 +1,81 @@
+# ============================================================================
+# Stage 5 (optional): Hard Negative Mining + Threshold Calibration (v2)
+# ============================================================================
+# Migrated from: stage4_hard_negative.yaml, S4
+#
+# 目标: 用 Stage 4 模型收集误检 crop, 低 lr 再训练提升 Precision
+#       然后每类单独搜索阈值 (Precision/Recall 双目标 ≥90%)
+# 初始化: Stage 4 best.pt
+# 数据: subway_crops (正样本 7 类) + hard negative crops (无标签)
+#       正样本 : 难负样本 = 1 : 1
+#
+# 难负样本采集重点 (按优先级):
+#   1. 正常螺栓/螺母 (SVHBNM/VHBNM 最大误检源)
+#   2. 正常销钉 (CBHPM/CBVPM 最大误检源)
+#   3. 金属边缘反光区域
+#   4. 阴影遮挡区域
+#   5. 切片边界伪影
+#   6. 运动模糊区域
+#
+# v2 changes (2026-06-27):
+#   - warmup_epochs: 3 → 0 (NO warmup — consistent low LR)
+#   - warmup_bias_lr: 0.1 → 0.00002 (matched to lr0)
+#   - epochs: 30 → 20
+#   - lrf: 0.1 → 1.0 (constant LR — no decay for fine-tuning)
+#   - patience: 8 → 6
+#   - freeze: [0-9] → [0-7] (slightly less frozen — allow neck adaptation)
+#   - NO auto_augment (raw real distribution only)
+#
+# 操作流程 (v2 — 脚本已实现):
+#   1. python scripts/collect_hard_negatives.py --model weights/stage4_best_finetune.pt
+#      → 输出: data/hard_negatives/{VHBNM,VHBNL,SVHBNM,...}/ + summary.json
+#   2. [可选] 人工快速确认误检框 (抽查 50 张 FP crop)
+#   3. 将 hard_negatives/ 下各子目录复制到 subway_crops/train/images/
+#      (正样本:难负样本 = 1:1 混合)
+#   4. 此阶段训练: python scripts/train_pipeline.py --stages 5 --model ...
+#   5. python scripts/calibrate_thresholds.py --model weights/stage5_calibrated.pt
+#      → 输出: data/calibrated_thresholds/thresholds.json (每类最优置信度阈值)
+# ============================================================================
+
+# ── 数据集 ──
+path: data/subway_crops
+train: train/images
+val: calibration/images
+nc: 7
+names: ["VHBNM", "VHBNL", "SVHBNM", "SVHBNL", "SVHTNL", "CBHPM", "CBVPM"]
+
+epochs: 10
+imgsz: 1280
+conf: 0.01                 # keep validation NMS complete under CPU load
+batch: 4
+optimizer: AdamW
+lr0: 0.000001
+lrf: 1.0
+momentum: 0.937
+weight_decay: 0.0005
+warmup_epochs: 0          # 关掉 warmup — 所有 param groups 从 lr0 起步
+warmup_bias_lr: 0.00002   # 与 lr0 一致
+cos_lr: false
+patience: 6
+save_period: 1
+
+# ── 数据增强 (完全关闭 — 只学真实分布) ──
+mosaic: 0.0
+mixup: 0.0
+copy_paste: 0.0
+erasing: 0.0
+degrees: 0.0
+translate: 0.0
+scale: 0.0
+shear: 0.0
+perspective: 0.0
+flipud: 0.0
+fliplr: 0.0
+hsv_h: 0.0
+hsv_s: 0.0
+hsv_v: 0.0
+close_mosaic: 0
+
+# ── 冻结 backbone 前半, 微调 neck 深层 + head ──
+freeze: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
+amp: false

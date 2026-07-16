@@ -12,7 +12,16 @@ from __future__ import annotations
 import os
 import warnings
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import ClassVar, Dict, List, Optional, Tuple
+
+import yaml
+
+
+def _safe_load_yaml(path: str | Path) -> dict:
+    """Load a YAML file and return an empty dict for empty documents."""
+    with Path(path).open("r", encoding="utf-8") as f:
+        return yaml.safe_load(f) or {}
 
 # ── Stage A: COCO Pretraining (base weights) ────────────────────
 # Not a training stage itself — maps to Ultralytics official weights.
@@ -73,7 +82,7 @@ class HardwareProfile:
             if torch.cuda.is_available():
                 prop = torch.cuda.get_device_properties(0)
                 profile.gpu_name = prop.name
-                profile.vram_gb = prop.total_mem / (1024 ** 3)
+                profile.vram_gb = prop.total_memory / (1024 ** 3)
                 # Fallback: some drivers / container runtimes report total_mem=0
                 # even when CUDA is available. Use mem_get_info as backup.
                 if profile.vram_gb <= 0:
@@ -325,6 +334,51 @@ DEFECT_FINETUNE_CONFIG: dict = {
 }
 
 
+# ── Defect detector — Stage 5 v2 hard-negative fine-tune ─────────
+#
+# 2026-07-04 analysis showed that the first hard-negative run reduced raw
+# detections but did not improve calibrated precision. The likely bottleneck
+# was an overly conservative update budget: freeze[0-7] + lr=2e-5. This preset
+# keeps the no-augmentation HN setting, but gives the neck/head and deeper
+# backbone blocks enough freedom to learn the negative patterns.
+DEFECT_HARD_NEGATIVE_V2_CONFIG: dict = {
+    **_COMMON_BASE,
+    **_DATALOADER,
+    "amp": False,
+    "cache": False,
+    "epochs": 20,
+    "imgsz": 1280,
+    "batch": 4,
+    "optimizer": "AdamW",
+    "lr0": 5e-5,
+    "lrf": 1.0,
+    "momentum": 0.937,
+    "weight_decay": 0.0005,
+    "warmup_epochs": 0,
+    "warmup_momentum": 0.8,
+    "warmup_bias_lr": 5e-5,
+    "patience": 6,
+    "save_period": 5,
+    "cos_lr": False,
+    "mosaic": 0.0,
+    "mixup": 0.0,
+    "cutmix": 0.0,
+    "copy_paste": 0.0,
+    "hsv_h": 0.0,
+    "hsv_s": 0.0,
+    "hsv_v": 0.0,
+    "degrees": 0.0,
+    "translate": 0.0,
+    "scale": 0.0,
+    "shear": 0.0,
+    "perspective": 0.0,
+    "flipud": 0.0,
+    "fliplr": 0.0,
+    "close_mosaic": 10,
+    "freeze": [0, 1, 2, 3],
+}
+
+
 # ============================================================================
 # Apply hardware profile to a config dict (mutates in-place)
 # ============================================================================
@@ -353,8 +407,10 @@ def apply_hardware_profile(
     # ── Workers ──
     config["workers"] = profile.recommended_workers
 
-    # ── Cache ──
-    config["cache"] = profile.recommended_cache
+    # Respect explicit cache settings, e.g. Stage 5 v2 disables RAM cache to
+    # avoid large image-cache spikes on 1280px crops.
+    if config.get("cache") is None:
+        config["cache"] = profile.recommended_cache
 
     # ── Batch size (VRAM-aware) ──
     imgsz = config.get("imgsz", 640)

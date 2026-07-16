@@ -433,33 +433,52 @@ class FocalLoss(nn.Module):
     Wraps existing BCEWithLogitsLoss to apply focal loss dynamically.
     """
 
-    def __init__(self, loss_fcn, gamma=1.5, alpha=0.25):
+    def __init__(self, loss_fcn, gamma=1.5, alpha=0.25, class_weights=None):
         super().__init__()
         self.loss_fcn = loss_fcn  # 必须是 nn.BCEWithLogitsLoss()
         self.gamma = gamma
         self.alpha = alpha
+        self.class_weights = (
+            torch.as_tensor(class_weights, dtype=torch.float32)
+            if class_weights is not None and len(class_weights) else None
+        )
         self.reduction = loss_fcn.reduction
         # 将原损失函数的 reduction 强制设为 'none'，以便我们在每个元素上计算 Focal Loss 权重
         self.loss_fcn.reduction = 'none'
 
     def forward(self, pred, true):
         # 先计算基础的 BCE 损失
-        loss = self.loss_fcn(pred, true)
+        # Keep focal-loss arithmetic in FP32 under AMP. Saturated FP16 logits
+        # can otherwise produce transient NaNs in validation classification loss.
+        with autocast(enabled=False):
+            pred_f = pred.float()
+            true_f = true.float()
+            loss = F.binary_cross_entropy_with_logits(pred_f, true_f, reduction="none")
 
         # 将 logits 转换为概率
-        pred_prob = torch.sigmoid(pred)
+            pred_prob = torch.sigmoid(pred_f)
 
         # 计算 p_t: 如果 true=1 则 p_t=pred_prob, 如果 true=0 则 p_t=1-pred_prob
-        p_t = true * pred_prob + (1 - true) * (1 - pred_prob)
+            p_t = true_f * pred_prob + (1 - true_f) * (1 - pred_prob)
 
         # 计算 alpha 权重 (解决正负样本不平衡)
-        alpha_factor = true * self.alpha + (1 - true) * (1 - self.alpha)
+            alpha_factor = true_f * self.alpha + (1 - true_f) * (1 - self.alpha)
 
         # 计算 modulating factor (解决难易样本不平衡)
-        modulating_factor = (1.0 - p_t) ** self.gamma
+            modulating_factor = (1.0 - p_t) ** self.gamma
 
         # 应用 Focal Loss 公式
-        loss *= alpha_factor * modulating_factor
+            loss *= alpha_factor * modulating_factor
+
+            if self.class_weights is not None:
+                if loss.shape[-1] != self.class_weights.numel():
+                    raise ValueError(
+                        f"class_weights has {self.class_weights.numel()} values but "
+                        f"classification loss has {loss.shape[-1]} classes"
+                    )
+                shape = [1] * loss.ndim
+                shape[-1] = self.class_weights.numel()
+                loss *= self.class_weights.to(device=loss.device, dtype=loss.dtype).view(shape)
 
         # 根据需求进行维度缩减
         if self.reduction == 'mean':
@@ -482,7 +501,12 @@ class v8DetectionLoss:
 
         bce_loss = nn.BCEWithLogitsLoss(reduction="none")
 
-        self.bce = FocalLoss(bce_loss, gamma=2.0, alpha=0.25)
+        self.bce = FocalLoss(
+            bce_loss,
+            gamma=float(getattr(h, "fl_gamma", 2.0)),
+            alpha=0.25,
+            class_weights=getattr(h, "class_weights", None),
+        )
         self.hyp = h
         self.stride = m.stride  # model strides
         self.nc = m.nc  # number of classes

@@ -1,0 +1,54 @@
+# Stage 2: Custom Contact-Net Domain Adaptation
+# =============================================
+# Target: Transfer from public defect domain to real contact-net 7 class defects.
+# Init: Stage 1B best.pt (weights/stage1b_public_backbone.pt).
+# Data: subway_crops (1024 native resolution ROI crops).
+# Classes: 7 contact-net defect classes (nc=1→7, Detect cls layers reinitialized).
+#
+# Strategy: Freeze backbone first 60% layers, train neck + P3/P4/P5 + attention.
+# Acceptance: mAP50 > 0.35, mAP50-95 > 0.25, all per-class AP > 0.
+
+path: /root/autodl-tmp/projects/Subway_defect_detection_main/data/subway_crops_1024
+train: /root/autodl-tmp/projects/Subway_defect_detection_main/data/subway_crops_1024/train/images
+val: /root/autodl-tmp/projects/Subway_defect_detection_main/data/subway_crops_1024/val/images
+nc: 7
+names:
+- VHBNM
+- VHBNL
+- SVHBNM
+- SVHBNL
+- SVHTNL
+- CBHPM
+- CBVPM
+epochs: 40
+imgsz: 1024
+batch: 16
+optimizer: AdamW
+lr0: 0.0008
+lrf: 0.1
+warmup_epochs: 3
+warmup_bias_lr: 0.0008
+cos_lr: true
+weight_decay: 0.0005
+mosaic: 0.1
+mixup: 0.0
+copy_paste: 0.0
+erasing: 0.0
+hsv_h: 0.015
+hsv_s: 0.5
+hsv_v: 0.6
+degrees: 3.0
+translate: 0.1
+scale: 0.4
+shear: 0.5
+perspective: 0.0001
+patience: 18
+freeze:
+- 0
+- 1
+- 2
+- 3
+- 4
+- 5
+- 6
+- 7

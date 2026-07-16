@@ -166,6 +166,7 @@ CFG_FLOAT_KEYS = frozenset(
         "time",
         "workspace",
         "batch",
+        "fl_gamma",
     }
 )
 CFG_FRACTION_KEYS = frozenset(

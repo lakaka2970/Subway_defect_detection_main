@@ -1,0 +1,54 @@
+# Stage 1B: Public Defect Backbone Adaptation
+# ===========================================
+# Target: Adapt backbone deep layers to industrial anomaly textures.
+# Init: Stage 1A best.pt (weights/stage1a_public_head.pt).
+# Datasets: KolektorSDD2 + RSDDs + NEU-DET + GC10-DET.
+# Classes: 1 (generic_defect).
+#
+# Strategy:
+# - Freeze backbone early layers [0-5] → protect low-level COCO features.
+# - Unfreeze backbone deep layers [6-10] + neck + head.
+# - Lower LR (0.0003) to prevent catastrophic forgetting.
+# - cos_lr for smooth convergence.
+# - patience=25 to stop early.
+#
+# Output: weights/stage1b_public_backbone.pt.
+# Next:  Stage 2 (domain adaptation to contact-net 7 classes).
+
+path: /root/autodl-tmp/projects/Subway_defect_detection_main/data/multi_datasets/mixed_pretrain
+train: images/train
+val: images/val
+nc: 1
+names:
+- generic_defect
+epochs: 60
+imgsz: 1024
+batch: 16
+optimizer: AdamW
+lr0: 0.0003
+lrf: 0.05
+cos_lr: true
+weight_decay: 0.0005
+warmup_epochs: 3
+warmup_bias_lr: 0.0003
+mosaic: 0.2
+mixup: 0.0
+copy_paste: 0.0
+erasing: 0.0
+hsv_h: 0.015
+hsv_s: 0.6
+hsv_v: 0.6
+degrees: 4.0
+translate: 0.12
+scale: 0.7
+shear: 0.5
+perspective: 0.0002
+close_mosaic: 25
+patience: 25
+freeze:
+- 0
+- 1
+- 2
+- 3
+- 4
+- 5
