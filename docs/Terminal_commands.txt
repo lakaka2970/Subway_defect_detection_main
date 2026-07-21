@@ -1,0 +1,31 @@
+# 放弃云端本地修改（这些文件已在 commit 中更新）
+git checkout -- config/train/pretrain/stage2_domain_adapt.yaml \
+                config/train/pretrain/stage3_main_training.yaml \
+                config/train/pretrain/stage4_short_finetune.yaml
+
+# 拉取最新代码
+git pull
+
+# 确认版本
+git log --oneline -3
+
+
+
+# Step 1: 生成所有配置
+python scripts/multi_source_pretrain_yaml.py --stages 1a 1b 2 3 4
+
+# Step 2: Run A1 — 三尺度修复版基线 (必跑)
+python scripts/train_pipeline.py --stages 1a 1b 2 3 4 --model yolo11m-EMA-SimAM --device 0
+
+# Step 3: Run B1 — 四尺度 P2 对照实验 (必跑)
+python scripts/train_pipeline.py --stages p2 1a 1b 2 3 4 --model yolo11m-P2-EMA-SimAM --device 0
+
+# Step 4: 硬负样本挖掘 (基于最佳模型)
+# python scripts/collect_hard_negatives.py ...
+# python scripts/train_pipeline.py --stages 5 --model <best_model> --device 0
+
+
+
+python scripts/multi_source_pretrain_yaml.py --stages 1a 1b 2 3 4 \
+  && python scripts/train_pipeline.py --stages 1a 1b 2 3 4 --model yolo11m-EMA-SimAM --device 0 \
+  && python scripts/train_pipeline.py --stages p2 1a 1b 2 3 4 --model yolo11m-P2-EMA-SimAM --device 0
