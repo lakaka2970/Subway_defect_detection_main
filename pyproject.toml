@@ -7,7 +7,7 @@ name = "subway_defect"
 version = "0.1.0"
 description = "Subway catenary defect detection system using YOLO with EMA/SimAM attention"
 readme = "README.md"
-requires-python = ">=3.8"
+requires-python = ">=3.10"
 license = { text = "AGPL-3.0" }
 keywords = ["subway", "catenary", "defect-detection", "YOLO", "computer-vision"]
 authors = [
@@ -40,7 +40,7 @@ dependencies = [
     "fastapi>=0.104.0",
     "uvicorn>=0.24.0",
     "pydantic>=2.5.0",
-    "ultralytics>=8.0.0",
+    "ultralytics~=8.4.33",
 ]
 
 [project.optional-dependencies]

@@ -26,17 +26,17 @@
 # ── 数据集 ──
 path: data/subway_crops
 train: train/images
-val: calibration/images
+val: val/images
 nc: 7
 names: ["VHBNM", "VHBNL", "SVHBNM", "SVHBNL", "SVHTNL", "CBHPM", "CBVPM"]
 
 epochs: 10
 imgsz: 1280
 conf: 0.01                 # keep validation NMS complete under CPU load
-batch: 4
-amp: false
+batch: 16
+amp: true
 optimizer: AdamW
-lr0: 0.00001
+lr0: 0.00005  # 5e-5 — Phase C S4-L winner (+4.7% mAP50 vs 1e-5)
 lrf: 1.0
 momentum: 0.937
 weight_decay: 0.0005

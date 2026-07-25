@@ -16,7 +16,6 @@ from subway_yolo.utils.torch_utils import autocast
 
 from .metrics import bbox_iou, probiou
 from .tal import bbox2dist, rbox2dist
-# from .new_bbox_iou import new_bbox_iou
 
 class VarifocalLoss(nn.Module):
     """Varifocal loss by Zhang et al.

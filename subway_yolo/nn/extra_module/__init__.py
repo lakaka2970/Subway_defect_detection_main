@@ -15,7 +15,7 @@ from ..modules.conv import CBAM
 
 # Project custom attention modules — imported from the sibling
 # subway_defect package. After ``pip install -e .`` both packages are
-# importable, and tasks.py's ``from .Extramodule import *`` exposes
+# importable, and tasks.py's ``from .extra_module import *`` exposes
 # these in parse_model's globals() for YAML-based module resolution.
 from subway_defect.modules.EMA import EMA       # Efficient Multi-Scale Attention
 from subway_defect.modules.SimAM import SimAM   # Simple Parameter-Free Attention

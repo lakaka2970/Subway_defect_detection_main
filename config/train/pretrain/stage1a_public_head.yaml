@@ -14,7 +14,7 @@
 # Output: weights/stage1a_public_head.pt.
 # Next:  Stage 1B (unfreeze backbone deep layers, continue on generic_defect).
 
-path: /root/autodl-tmp/projects/Subway_defect_detection_main/data/multi_datasets/mixed_pretrain
+path: data/multi_datasets/mixed_pretrain
 train: images/train
 val: images/val
 nc: 1
@@ -22,7 +22,7 @@ names:
 - generic_defect
 epochs: 40
 imgsz: 1024
-batch: 16
+batch: 32
 optimizer: AdamW
 lr0: 0.001
 lrf: 0.05

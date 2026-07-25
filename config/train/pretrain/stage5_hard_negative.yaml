@@ -40,7 +40,7 @@
 # ── 数据集 ──
 path: data/subway_crops
 train: train/images
-val: calibration/images
+val: val/images
 nc: 7
 names: ["VHBNM", "VHBNL", "SVHBNM", "SVHBNL", "SVHTNL", "CBHPM", "CBVPM"]
 

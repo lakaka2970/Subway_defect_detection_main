@@ -2170,6 +2170,24 @@ class DatasetBuilder:
 
         dest_dir.mkdir(parents=True, exist_ok=True)
 
+        # ── Load Kaggle token from docs/kaggle_token.txt if available ──
+        _token_file = Path(__file__).resolve().parent.parent / "docs" / "kaggle_token.txt"
+        if _token_file.exists() and not os.environ.get("KAGGLE_API_TOKEN"):
+            try:
+                token_content = _token_file.read_text(encoding="utf-8").strip()
+                # Extract token value (handle "export KAGGLE_API_TOKEN=xxx" or bare token)
+                for line in token_content.splitlines():
+                    line = line.strip()
+                    if line.startswith("export "):
+                        line = line.split("=", 1)[-1].strip()
+                    if line and not line.startswith("#"):
+                        os.environ["KAGGLE_API_TOKEN"] = line
+                        break
+                if os.environ.get("KAGGLE_API_TOKEN"):
+                    print(info(f"[{key}] Loaded Kaggle token from {_token_file.name}"))
+            except Exception:
+                pass
+
         # ── Strategy 1: Kaggle CLI ─────────────────────────────────
         if _run(["kaggle", "datasets", "download", "-d", kaggle_slug,
                   "-p", str(dest_dir), "--unzip"]):

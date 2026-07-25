@@ -1,5 +1,5 @@
 train: train/images
-val: calibration/images
+val: val/images
 nc: 7
 names:
 - VHBNM
@@ -11,7 +11,7 @@ names:
 - CBVPM
 epochs: 80
 imgsz: 1280
-batch: 4
+batch: 16
 optimizer: AdamW
 lr0: 0.0002
 lrf: 0.05
@@ -37,7 +37,7 @@ flipud: 0.0
 fliplr: 0.5
 close_mosaic: 35
 auto_augment: none
-amp: false
+amp: true
 save_period: 5
 path: data/subway_crops
 seed: 0

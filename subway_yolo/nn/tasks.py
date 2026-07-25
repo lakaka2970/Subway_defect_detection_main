@@ -6,7 +6,7 @@ import re
 import types
 from copy import deepcopy
 from pathlib import Path
-from .Extramodule import *
+from .extra_module import *
 
 import torch
 import torch.nn as nn

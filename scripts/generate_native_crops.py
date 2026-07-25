@@ -290,18 +290,21 @@ def generate_crops(
     output_dir: Path,
     crop_size: int = 1024,
     stride: int = 512,
-    negatives_per_image: int = 25,
+    negatives_per_image: int = 10,
     val_ratio: float = 0.2,
     random_offset_range: Tuple[int, int] = (100, 300),
     dry_run: bool = False,
     balance: bool = False,
-    minority_multiplier: int = 2,
+    minority_multiplier: int = 3,
     debiasing: bool = False,
     split_manifest: Path | None = None,
     eval_negatives_per_image: int = 10,
     unlabelled_negatives_per_image: int = 3,
     source_list: Path | None = None,
     only_split: str | None = None,
+    multi_scale: bool = False,
+    copy_paste: bool = False,
+    tight_context: float = 0.02,
 ) -> Dict:
     """Generate native-resolution training crops.
 
@@ -436,6 +439,37 @@ def generate_crops(
                     stats["per_class_boxes"][CLASS_NAMES[cls_id]] += 1
         return stats
 
+    # ── Build defect bank for copy-paste (small patches 60-200px) ──────
+    defect_bank: List[Tuple] = []  # (patch_array, cls_id, patch_w, patch_h)
+    if copy_paste and not dry_run:
+        print("  Building defect bank for copy-paste (60-200px patches)...", flush=True)
+        for stem in img_stems:
+            img_path = _find_image(stem, img_dir)
+            if img_path is None:
+                continue
+            entries = labels.get(stem, [])
+            if not entries:
+                continue
+            img_cp = cv2.imread(str(img_path))
+            if img_cp is None:
+                continue
+            h_cp, w_cp = img_cp.shape[:2]
+            for cls_id, xc_n, yc_n, w_n, h_n in entries:
+                bw_px = int(w_n * w_cp)
+                bh_px = int(h_n * h_cp)
+                side = max(bw_px, bh_px)
+                if 60 <= side <= 200:
+                    bx1 = int((xc_n - w_n / 2) * w_cp)
+                    by1 = int((yc_n - h_n / 2) * h_cp)
+                    bx2 = bx1 + bw_px
+                    by2 = by1 + bh_px
+                    bx1, by1 = max(0, bx1), max(0, by1)
+                    bx2, by2 = min(w_cp, bx2), min(h_cp, by2)
+                    if bx2 - bx1 >= 8 and by2 - by1 >= 8:
+                        patch = img_cp[by1:by2, bx1:bx2].copy()
+                        defect_bank.append((patch, cls_id, bx2 - bx1, by2 - by1))
+        print(f"  Defect bank: {len(defect_bank)} patches extracted", flush=True)
+
     # ── Generate crops ─────────────────────────────────────────────────
     print(f"\nGenerating crops (this may take a while — progress per image):\n", flush=True)
     for split_tag, stems in split_sets.items():
@@ -467,6 +501,11 @@ def generate_crops(
                 bx = int(xc_norm * img_w)
                 by = int(yc_norm * img_h)
 
+                # Tight-context: for very small defects, use 1.5× bbox context
+                # instead of random offset to prevent clipping at crop edges
+                bbox_area_frac = w_norm * h_norm
+                use_tight = bbox_area_frac < tight_context
+
                 # Class-balanced: minority classes get extra crops with varied offsets
                 n_crops = 1
                 offset_range = random_offset_range
@@ -476,7 +515,11 @@ def generate_crops(
                     offset_range_extra = (50, 150)
 
                 for crop_idx in range(n_crops):
-                    if debiasing:
+                    if use_tight and crop_idx == 0:
+                        # Tight 1.5× context: center crop on defect with minimal offset
+                        cx = max(crop_size // 2, min(img_w - crop_size // 2, bx))
+                        cy = max(crop_size // 2, min(img_h - crop_size // 2, by))
+                    elif debiasing:
                         # Position de-biasing: systematically vary defect
                         # position (center/off-center/edge/corner) to prevent
                         # the model from learning position shortcuts.
@@ -584,6 +627,44 @@ def generate_crops(
                     stats["positive_crops"][split_tag] += 1
                     stats["defect_boxes"][split_tag] += len(crop_lines)
 
+                    # ── Multi-scale: generate additional 640px crop ──────
+                    if multi_scale and split_tag == "train" and crop_size > 640:
+                        ms_size = 640
+                        ms_half = ms_size // 2
+                        # Center 640px crop on the defect bbox
+                        ms_cx = max(ms_half, min(img_w - ms_half, bx))
+                        ms_cy = max(ms_half, min(img_h - ms_half, by))
+                        ms_x1 = ms_cx - ms_half
+                        ms_y1 = ms_cy - ms_half
+                        ms_x2 = ms_x1 + ms_size
+                        ms_y2 = ms_y1 + ms_size
+                        if ms_x1 >= 0 and ms_y1 >= 0 and ms_x2 <= img_w and ms_y2 <= img_h:
+                            ms_crop = img[ms_y1:ms_y2, ms_x1:ms_x2]
+                            if ms_crop.size > 0:
+                                ms_lines: List[str] = []
+                                for e_cls, e_xc, e_yc, e_w, e_h in entries:
+                                    overlap = _bbox_overlap(
+                                        ms_cx, ms_cy, ms_size, ms_size,
+                                        e_xc, e_yc, e_w, e_h, img_w, img_h,
+                                    )
+                                    if overlap >= MIN_BBOX_VISIBILITY:
+                                        nbox = _normalize_bbox_to_crop(
+                                            e_xc, e_yc, e_w, e_h, img_w, img_h,
+                                            ms_cx, ms_cy, ms_size, ms_size,
+                                        )
+                                        if nbox:
+                                            ms_lines.append(f"{e_cls} {nbox[0]:.6f} {nbox[1]:.6f} "
+                                                            f"{nbox[2]:.6f} {nbox[3]:.6f}")
+                                ms_name = f"{stem}_ms{img_count:04d}"
+                                cv2.imwrite(str(out_img_dir / f"{ms_name}.jpg"), ms_crop,
+                                            [cv2.IMWRITE_JPEG_QUALITY, 95])
+                                (out_lbl_dir / f"{ms_name}.txt").write_text(
+                                    "\n".join(ms_lines) + "\n" if ms_lines else "\n",
+                                    encoding="utf-8",
+                                )
+                                img_count += 1
+                                stats["positive_crops"][split_tag] += 1
+
             # ── Negative crops (defect-free but structurally similar) ─
             neg_count = 0
             if split_tag == "train":
@@ -626,11 +707,38 @@ def generate_crops(
                 if std < 10:  # too uniform — nothing to learn
                     continue
 
+                # ── Integrated Copy-Paste: paste defect patches onto negatives ─
+                cp_labels: List[str] = []
+                if copy_paste and split_tag == "train" and defect_bank:
+                    n_pastes = random.randint(1, 3) if random.random() < 0.3 else 0
+                    for _ in range(n_pastes):
+                        patch, p_cls, pw, ph = random.choice(defect_bank)
+                        # Find non-overlapping location within crop
+                        px = random.randint(50, max(51, crop_size - pw - 50))
+                        py = random.randint(50, max(51, crop_size - ph - 50))
+                        roi = crop[py:py + ph, px:px + pw]
+                        if roi.shape[0] == ph and roi.shape[1] == pw:
+                            crop[py:py + ph, px:px + pw] = cv2.addWeighted(
+                                patch, 0.85, roi, 0.15, 0
+                            )
+                            # YOLO label for pasted defect
+                            xc_cp = (px + pw / 2) / crop_size
+                            yc_cp = (py + ph / 2) / crop_size
+                            w_cp = pw / crop_size
+                            h_cp = ph / crop_size
+                            cp_labels.append(f"{p_cls} {xc_cp:.6f} {yc_cp:.6f} {w_cp:.6f} {h_cp:.6f}")
+                            stats["defect_boxes"][split_tag] += 1
+                            if p_cls < NC:
+                                stats["per_class_boxes"][CLASS_NAMES[p_cls]] += 1
+
                 crop_name = f"{stem}_n{neg_count:04d}"
                 cv2.imwrite(str(out_img_dir / f"{crop_name}.jpg"), crop,
                             [cv2.IMWRITE_JPEG_QUALITY, 95])
-                # Missing labels are intentional: Ultralytics treats the image
-                # as background-only, and provenance remains easy to audit.
+                # Write labels (empty for pure negatives, or copy-paste labels)
+                if cp_labels:
+                    (out_lbl_dir / f"{crop_name}.txt").write_text(
+                        "\n".join(cp_labels) + "\n", encoding="utf-8",
+                    )
                 neg_count += 1
                 stats["negative_crops"][split_tag] += 1
 
@@ -733,9 +841,10 @@ Examples:
         help="Stride for negative crop sliding window (default: 512)",
     )
     parser.add_argument(
-        "--negatives-per-image", type=int, default=25,
-        help="Number of negative crops per source image (default: 25, was 15 — "
-             "increased for better FP suppression on SVHBNM)",
+        "--negatives-per-image", type=int, default=10,
+        help="Number of negative crops per source image (default: 10 — "
+             "reduced from 25 to lower negative ratio from 90%% to ~75%%, "
+             "improving training efficiency per 7-18 plan)",
     )
     parser.add_argument(
         "--val-ratio", type=float, default=0.2,
@@ -767,8 +876,9 @@ Examples:
              "defect with varied offsets, instead of 1. Mitigates class imbalance.",
     )
     parser.add_argument(
-        "--minority-multiplier", type=int, default=2,
-        help="Extra crops per defect for minority classes in --balance mode (default: 2)",
+        "--minority-multiplier", type=int, default=3,
+        help="Extra crops per defect for minority classes in --balance mode (default: 3, "
+             "increased from 2 per 7-18 plan to better support SVHBNL/CBHPM weak classes)",
     )
     parser.add_argument(
         "--debiasing", action="store_true",
@@ -776,6 +886,24 @@ Examples:
              "(center 30%% / off-center 30%% / near-edge 25%% / corner 15%%). "
              "Prevents the model from learning that defects always appear at crop center. "
              "Recommended for training to reduce position bias.",
+    )
+    parser.add_argument(
+        "--multi-scale", action="store_true",
+        help="Multi-scale crop: generate both the primary crop (crop-size) and a "
+             "secondary 640px crop for each defect. The 640px crop makes small targets "
+             "occupy a larger fraction of the feature map, improving small-object Recall.",
+    )
+    parser.add_argument(
+        "--copy-paste", action="store_true",
+        help="Integrated copy-paste: paste small defect patches (60-200px) onto "
+             "negative crops during generation. Merges the separate "
+             "generate_defect_copy_paste.py step into the crop pipeline.",
+    )
+    parser.add_argument(
+        "--tight-context", type=float, default=0.02,
+        help="Bbox area threshold (fraction of crop area) below which tight 1.5x "
+             "context cropping is used instead of random offset (default: 0.02 = 2%%). "
+             "Ensures small defects are not clipped at crop edges.",
     )
     parser.add_argument(
         "--seed", type=int, default=SEED,
@@ -820,6 +948,9 @@ Examples:
         unlabelled_negatives_per_image=args.unlabelled_negatives_per_image,
         source_list=args.source_list,
         only_split=args.only_split,
+        multi_scale=args.multi_scale,
+        copy_paste=args.copy_paste,
+        tight_context=args.tight_context,
     )
 
     print(f"\n{'=' * 60}")

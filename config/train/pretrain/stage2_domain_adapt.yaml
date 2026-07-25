@@ -8,9 +8,9 @@
 # Strategy: Freeze backbone first 60% layers, train neck + P3/P4/P5 + attention.
 # Acceptance: mAP50 > 0.35, mAP50-95 > 0.25, all per-class AP > 0.
 
-path: /root/autodl-tmp/projects/Subway_defect_detection_main/data/subway_crops_1024
-train: /root/autodl-tmp/projects/Subway_defect_detection_main/data/subway_crops_1024/train/images
-val: /root/autodl-tmp/projects/Subway_defect_detection_main/data/subway_crops_1024/val/images
+path: data/subway_crops_1024
+train: train/images
+val: val/images
 nc: 7
 names:
 - VHBNM
@@ -22,7 +22,7 @@ names:
 - CBVPM
 epochs: 40
 imgsz: 1024
-batch: 16
+batch: 32
 optimizer: AdamW
 lr0: 0.0008
 lrf: 0.1

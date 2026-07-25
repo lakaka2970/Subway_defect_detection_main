@@ -335,6 +335,10 @@ class BaseTrainer:
         self.scaler = (
             torch.amp.GradScaler("cuda", enabled=self.amp) if TORCH_2_4 else torch.cuda.amp.GradScaler(enabled=self.amp)
         )
+        # Enable TF32 for matmul on Ampere+ GPUs (compute capability >= 8.0) for ~25% speedup
+        if self.device.type == "cuda" and torch.cuda.get_device_capability(self.device) >= (8, 0):
+            torch.backends.cuda.matmul.allow_tf32 = True
+            torch.backends.cudnn.benchmark = True  # auto-select fastest conv algorithms for fixed input sizes
         if self.world_size > 1:
             self.model = nn.parallel.DistributedDataParallel(self.model, device_ids=[RANK], find_unused_parameters=True)
 
