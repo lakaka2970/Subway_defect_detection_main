@@ -62,12 +62,61 @@ MIN_CROP_SIZE = 32
 # Class indices in the 7-class training set
 CLASS_NAMES = ["VHBNM", "VHBNL", "SVHBNM", "SVHBNL", "SVHTNL", "CBHPM", "CBVPM"]
 
-# State mapping: which classes map to which classifier task
-# CBHPM (idx 5): binary — missing (has GT) vs normal (FP, no GT)
-# VHBNM (idx 0) + VHBNL (idx 1): 4-class — missing/loose/normal/ambiguous
+# State mapping per class:
+#   CBHPM  (idx 5): binary — missing (TP) vs normal (FP)
+#   CBVPM  (idx 6): binary — missing (TP) vs normal (FP)
+#   SVHBNM (idx 2): binary — missing (TP) vs normal (FP)
+#   SVHBNL (idx 3): binary — loose (TP) vs normal (FP)
+#   SVHTNL (idx 4): binary — loose (TP) vs normal (FP)
+#   VHBNM  (idx 0) + VHBNL (idx 1): 4-class — missing/loose/normal/ambiguous
 CBHPM_IDX = 5
+CBVPM_IDX = 6
+SVHBNM_IDX = 2
+SVHBNL_IDX = 3
+SVHTNL_IDX = 4
 VHBNM_IDX = 0
 VHBNL_IDX = 1
+
+# Classifier task definitions: task_name → (class_indices, state_map)
+# state_map: det_cls → {tp_state, fp_state}
+CLASSIFIER_TASKS = {
+    "cbhpm": {
+        "class_indices": [CBHPM_IDX],
+        "tp_state": "missing",
+        "fp_state": "normal",
+        "class_names": ["normal", "missing"],
+    },
+    "cbvpm": {
+        "class_indices": [CBVPM_IDX],
+        "tp_state": "missing",
+        "fp_state": "normal",
+        "class_names": ["normal", "missing"],
+    },
+    "svhbnm": {
+        "class_indices": [SVHBNM_IDX],
+        "tp_state": "missing",
+        "fp_state": "normal",
+        "class_names": ["normal", "missing"],
+    },
+    "svhbnl": {
+        "class_indices": [SVHBNL_IDX],
+        "tp_state": "loose",
+        "fp_state": "normal",
+        "class_names": ["normal", "loose"],
+    },
+    "svhtnl": {
+        "class_indices": [SVHTNL_IDX],
+        "tp_state": "loose",
+        "fp_state": "normal",
+        "class_names": ["normal", "loose"],
+    },
+    "vhbnm_vhbnl": {
+        "class_indices": [VHBNM_IDX, VHBNL_IDX],
+        "tp_state": None,  # per-class: VHBNM→missing, VHBNL→loose
+        "fp_state": "normal",
+        "class_names": ["normal", "missing", "loose", "ambiguous"],
+    },
+}
 
 
 def extract_context_crop(
@@ -265,6 +314,13 @@ def _determine_state(
     Returns:
         State string or None if this detection should be skipped.
     """
+    # Find the task this class belongs to
+    task_name = _get_classifier_task(det_cls)
+    if task_name is None:
+        return None
+
+    task = CLASSIFIER_TASKS[task_name]
+
     # Check if detection matches any GT box of the same class
     best_iou = 0.0
     matched_gt_cls = None
@@ -276,35 +332,26 @@ def _determine_state(
 
     if best_iou >= iou_threshold and matched_gt_cls == det_cls:
         # True positive — this is a real defect
-        if det_cls == CBHPM_IDX:
-            return "missing"
-        elif det_cls == VHBNM_IDX:
-            return "missing"
-        elif det_cls == VHBNL_IDX:
-            return "loose"
-        else:
-            return None  # Other classes not in scope for now
+        if task_name == "vhbnm_vhbnl":
+            # Per-class TP state
+            return "missing" if det_cls == VHBNM_IDX else "loose"
+        return task["tp_state"]
     elif best_iou < iou_threshold:
         # False positive — no matching GT
-        if det_cls == CBHPM_IDX:
-            return "normal"
-        elif det_cls in (VHBNM_IDX, VHBNL_IDX):
-            return "normal"
-        else:
-            return None
+        return task["fp_state"]
     else:
-        # Matched different class — ambiguous
-        if det_cls in (VHBNM_IDX, VHBNL_IDX):
+        # Matched different class — ambiguous (only for vhbnm_vhbnl)
+        if task_name == "vhbnm_vhbnl":
             return "ambiguous"
-        return None
+        # For binary tasks, cross-class match is still a FP
+        return task["fp_state"]
 
 
 def _get_classifier_task(det_cls: int) -> str | None:
     """Map detection class to classifier task name."""
-    if det_cls == CBHPM_IDX:
-        return "cbhpm"
-    elif det_cls in (VHBNM_IDX, VHBNL_IDX):
-        return "vhbnm_vhbnl"
+    for task_name, task in CLASSIFIER_TASKS.items():
+        if det_cls in task["class_indices"]:
+            return task_name
     return None
 
 

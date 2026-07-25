@@ -3,6 +3,12 @@
 Extracts small-defect patches from training images and pastes them onto
 other images at non-overlapping locations, multiplying small-object
 training instances.
+
+v2 improvements:
+- Poisson blending (cv2.seamlessClone) for realistic boundary transitions
+- Adaptive scale jitter (±15%) to increase size diversity
+- Color harmonization before pasting to reduce domain gap
+- Class-balanced sampling from defect bank (minority classes oversampled)
 """
 
 from __future__ import annotations
@@ -46,6 +52,61 @@ def _iou(a: Tuple[int, int, int, int], b: Tuple[int, int, int, int]) -> float:
     area_b = (b[2] - b[0]) * (b[3] - b[1])
     union = area_a + area_b - inter
     return inter / union if union > 0 else 0.0
+
+
+def _harmonize_color(patch: np.ndarray, target_roi: np.ndarray) -> np.ndarray:
+    """Match patch color statistics to the target ROI (Reinhard transfer).
+
+    Prevents pasted defects from looking like they belong to a different
+    lighting / camera condition than the host image.
+    """
+    if target_roi.size == 0 or patch.size == 0:
+        return patch
+    src = patch.astype(np.float32)
+    ref = target_roi.astype(np.float32)
+    for c in range(3):
+        s_mean, s_std = src[:, :, c].mean(), src[:, :, c].std() + 1e-6
+        r_mean, r_std = ref[:, :, c].mean(), ref[:, :, c].std() + 1e-6
+        src[:, :, c] = (src[:, :, c] - s_mean) * (r_std / s_std) + r_mean
+    return np.clip(src, 0, 255).astype(np.uint8)
+
+
+def _poisson_blend(patch: np.ndarray, canvas: np.ndarray,
+                   px: int, py: int, ph: int, pw: int) -> bool:
+    """Blend patch into canvas at (px, py) using Poisson seamless cloning.
+
+    Falls back to alpha blending if seamlessClone fails (e.g. patch too
+    small or touches the image border).
+    Returns True on success.
+    """
+    # seamlessClone requires the mask to be fully inside the destination
+    center = (px + pw // 2, py + ph // 2)
+    mask = np.ones((ph, pw), dtype=np.uint8) * 255
+    try:
+        result = cv2.seamlessClone(patch, canvas, mask, center, cv2.NORMAL_CLONE)
+        canvas[:] = result
+        return True
+    except cv2.error:
+        return False
+
+
+def _build_class_balanced_bank(
+    defect_bank: List[Tuple[np.ndarray, int, int, int]],
+) -> Tuple[List[Tuple[np.ndarray, int, int, int]], List[float]]:
+    """Compute per-item sampling weights that oversample minority classes."""
+    cls_counts: Dict[int, int] = {}
+    for _, cls_id, _, _ in defect_bank:
+        cls_counts[cls_id] = cls_counts.get(cls_id, 0) + 1
+    if not cls_counts:
+        return defect_bank, [1.0] * len(defect_bank)
+    max_count = max(cls_counts.values())
+    weights = []
+    for _, cls_id, _, _ in defect_bank:
+        # Inverse-frequency weighting: rare classes get higher weight
+        weights.append(max_count / (cls_counts[cls_id] + 1e-6))
+    total = sum(weights)
+    weights = [w / total for w in weights]
+    return defect_bank, weights
 
 
 def copy_paste_defects(
@@ -130,6 +191,9 @@ def copy_paste_defects(
         cls_counts[cls_id] = cls_counts.get(cls_id, 0) + 1
     print(f"  Bank class distribution: {dict(sorted(cls_counts.items()))}")
 
+    # Build class-balanced sampling weights
+    defect_bank, bank_weights = _build_class_balanced_bank(defect_bank)
+
     if dry_run:
         n_targets = int(len(image_files) * paste_prob)
         print(f"\n  [DRY-RUN] Would paste onto ~{n_targets} images")
@@ -189,7 +253,17 @@ def copy_paste_defects(
         pasted_this_img = 0
 
         for _ in range(n_pastes):
-            patch, cls_id, pw, ph = random.choice(defect_bank)
+            # Class-balanced sampling from defect bank
+            idx_choice = random.choices(range(len(defect_bank)), weights=bank_weights, k=1)[0]
+            patch, cls_id, pw, ph = defect_bank[idx_choice]
+
+            # Adaptive scale jitter (±15%) for size diversity
+            scale = random.uniform(0.85, 1.15)
+            new_pw = max(4, int(pw * scale))
+            new_ph = max(4, int(ph * scale))
+            if new_pw != pw or new_ph != ph:
+                patch = cv2.resize(patch, (new_pw, new_ph), interpolation=cv2.INTER_LINEAR)
+                pw, ph = new_pw, new_ph
 
             # Find valid paste location
             attempts = 0
@@ -209,13 +283,18 @@ def copy_paste_defects(
                 if overlap:
                     continue
 
-                # Alpha blend paste
                 roi = img[py:py + ph, px:px + pw]
                 if roi.shape[0] != ph or roi.shape[1] != pw:
                     continue
-                img[py:py + ph, px:px + pw] = cv2.addWeighted(
-                    patch, alpha_blend, roi, 1 - alpha_blend, 0
-                )
+
+                # Color harmonization: match patch to local background
+                patch_harmonized = _harmonize_color(patch, roi)
+
+                # Poisson blending for seamless boundaries (fallback: alpha blend)
+                if not _poisson_blend(patch_harmonized, img, px, py, ph, pw):
+                    img[py:py + ph, px:px + pw] = cv2.addWeighted(
+                        patch_harmonized, alpha_blend, roi, 1 - alpha_blend, 0
+                    )
 
                 # Record new label
                 yolo_box = _xyxy_to_yolo(px, py, px + pw, py + ph, w_img, h_img)

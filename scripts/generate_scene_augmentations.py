@@ -9,12 +9,14 @@ Scene-level augmentations do NOT change bounding-box positions, so the
 original label file is copied verbatim for each variant.
 
 Augmentation weights reflect typical subway operating conditions:
-    vibration   25% — train-induced high-frequency micro-jitter (NEW)
-    tunnel      25% — most mileage is underground
-    sunlit      15% — outdoor / elevated sections
-    white_bal   15% — tunnel light colour temperature shifts (NEW)
-    blur        10% — vehicle vibration on any section
-    weather     10% — humidity fog in tunnels / rain outdoors
+    vibration   20% — train-induced high-frequency micro-jitter
+    tunnel      20% — most mileage is underground
+    sunlit      12% — outdoor / elevated sections
+    white_bal   12% — tunnel light colour temperature shifts
+    glare       12% — reflective glare from metal / catenary wires (NEW v3)
+    night       12% — night / low-light / IR inspection conditions (NEW v3)
+    blur         6% — vehicle vibration on any section
+    weather      6% — humidity fog in tunnels / rain outdoors
 
 Supports both full-source-image mode (Defect_dataset) and crop-level mode
 (subway_crops). In crop mode, augmentations are balanced per defect class
@@ -53,7 +55,9 @@ from tqdm import tqdm
 # Import scene augmentations — try package import first
 try:
     from subway_defect.augmentations.scene import (
+        glare_augment,
         motion_blur,
+        night_augment,
         sunlitize,
         tunnelize,
         vibration_blur,
@@ -73,6 +77,8 @@ except (ModuleNotFoundError, ImportError):
     vibration_blur = _scene.vibration_blur
     weather_augment = _scene.weather_augment
     white_balance_shift = _scene.white_balance_shift
+    glare_augment = _scene.glare_augment
+    night_augment = _scene.night_augment
     _USE_PACKAGE_IMPORT = False
 
 # Cap workers to avoid overwhelming cloud instances (even spawn mode can
@@ -82,14 +88,16 @@ _MAX_WORKERS = min(os.cpu_count() or 4, 8)
 SEED = 42
 N_AUGS_PER_IMAGE = 3
 
-# Sampling weights (probabilities) — v2 extended pool
+# Sampling weights (probabilities) — v3 extended pool with glare + night
 AUG_POOL = [
-    ("vibration", vibration_blur, 0.25),       # NEW: high-frequency micro-jitter
-    ("tunnel", tunnelize, 0.25),
-    ("sunlit", sunlitize, 0.15),
-    ("white_bal", white_balance_shift, 0.15),  # NEW: colour temperature shifts
-    ("blur", motion_blur, 0.10),
-    ("weather", weather_augment, 0.10),
+    ("vibration", vibration_blur, 0.20),       # high-frequency micro-jitter
+    ("tunnel", tunnelize, 0.20),
+    ("sunlit", sunlitize, 0.12),
+    ("white_bal", white_balance_shift, 0.12),  # colour temperature shifts
+    ("glare", glare_augment, 0.12),            # NEW: reflective glare / specular
+    ("night", night_augment, 0.12),            # NEW: night / low-light / IR
+    ("blur", motion_blur, 0.06),
+    ("weather", weather_augment, 0.06),
 ]
 _AUG_NAMES = [a[0] for a in AUG_POOL]
 _AUG_FNS = [a[1] for a in AUG_POOL]

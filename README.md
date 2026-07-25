@@ -4,6 +4,63 @@
 
 > 完整规格说明见 [SPECIFICATION.md](SPECIFICATION.md)
 
+## 当前模型状态（2026-07-25 更新）
+
+### 检测模型
+
+| 属性 | 值 |
+|------|:--:|
+| 架构 | **YOLO11s-EMA-SimAM** |
+| 参数量 | 9.58M |
+| GFLOPs | 23.3 |
+| 检测类别 | **7 类**（VHBNM, VHBNL, SVHBNM, SVHBNL, SVHTNL, CBHPM, CBVPM） |
+| 推荐权重 | `weights/stage4_best_finetune.pt`（mAP50=0.622） |
+| 代码分支 | `upgrade/7.25` |
+
+### 性能指标（val 集 2,869 张）
+
+| 指标 | S4 权重 | 验收线 |
+|------|:------:|:-----:|
+| mAP50 | **0.622** | — |
+| mAP50-95 | **0.494** | — |
+| Precision | 0.550 | ≥0.90 |
+| Recall | 0.599 | ≥0.90 |
+| CBHPM 级联 Precision | **0.959** | ≥0.90 ✅ |
+| 推理速度 | ~13ms/tile | ≤10s/图 ✅ |
+
+### 级联分类器（全部 6 个已训练）
+
+| 分类器 | 任务 | macro-F1 | 权重 |
+|--------|------|:--------:|------|
+| CBHPM | normal/missing | **0.956** | `weights/classifier_cbhpm.pt` |
+| SVHBNL | normal/loose | **0.868** | `weights/classifier_svhbnl.pt` |
+| CBVPM | normal/missing | **0.859** | `weights/classifier_cbvpm.pt` |
+| SVHTNL | normal/loose | **0.839** | `weights/classifier_svhtnl.pt` |
+| SVHBNM | normal/missing | **0.835** | `weights/classifier_svhbnm.pt` |
+| VHBNM/VHBNL | 4-class | 0.499 | `weights/classifier_vhbnm_vhbnl.pt`（实验性） |
+
+### 训练数据集（7.25 重建版）
+
+| 指标 | 值 |
+|------|:--:|
+| 总图片数 | **~48,000+** |
+| 正样本 | ~28,755（~60%） |
+| 负样本 | ~19,000（~40%） |
+| 总标注框 | 48,647 |
+| 场景增强 | v3（含反光眩光 + 夜晚暗光/IR） |
+| Copy-Paste | v2（Poisson 融合 + 色彩协调 + 类别均衡） |
+| A2 审计数据 | 363 张（HN + FN + 修订 + 误报 + 空标签） |
+
+### 五阶段训练流程
+
+```
+Stage 1A (Head预热) → 1B (Backbone适应) → 2 (域适应) → 3 (主训练) → 4 (微调) → 5 (难负样本)
+   公开数据集            公开数据集          subway_crops    subway_crops    subway_crops    subway_crops+HN
+   40ep/1024px          60ep/1024px        40ep/1024px    80ep/1280px    10ep/1280px    10ep/1280px
+```
+
+> 详细评估报告见 `docs/2026-07-25模型评估报告.md`
+
 ## 项目概述
 
 本系统通过车载高速相机采集的接触网图像，自动识别螺栓松动/脱落、开口销缺失、绝缘子破损等 18 类缺陷，替代人工巡检。系统支持**车载端**（单 RTX 4090，离线运行）和**地面端**（双 RTX 4090，WBF 融合）两种部署形态。

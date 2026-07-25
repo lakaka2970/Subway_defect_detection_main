@@ -2,13 +2,13 @@
 # =============================================
 # Target: Transfer from public defect domain to real contact-net 7 class defects.
 # Init: Stage 1B best.pt (weights/stage1b_public_backbone.pt).
-# Data: subway_crops (1024 native resolution ROI crops).
-# Classes: 7 contact-net defect classes (nc=1→7, Detect cls layers reinitialized).
+# Data: subway_crops (1280px native, resized to 1024 for training).
+# Classes: 7 contact-net defect classes.
 #
 # Strategy: Freeze backbone first 60% layers, train neck + P3/P4/P5 + attention.
 # Acceptance: mAP50 > 0.35, mAP50-95 > 0.25, all per-class AP > 0.
 
-path: data/subway_crops_1024
+path: data/subway_crops
 train: train/images
 val: val/images
 nc: 7
@@ -20,9 +20,9 @@ names:
 - SVHTNL
 - CBHPM
 - CBVPM
-epochs: 40
+epochs: 20
 imgsz: 1024
-batch: 32
+batch: -1
 optimizer: AdamW
 lr0: 0.0008
 lrf: 0.1
@@ -42,7 +42,8 @@ translate: 0.1
 scale: 0.4
 shear: 0.5
 perspective: 0.0001
-patience: 18
+patience: 10
+amp: true
 freeze:
 - 0
 - 1

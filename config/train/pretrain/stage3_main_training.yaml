@@ -9,9 +9,9 @@ names:
 - SVHTNL
 - CBHPM
 - CBVPM
-epochs: 80
+epochs: 25
 imgsz: 1280
-batch: 16
+batch: -1
 optimizer: AdamW
 lr0: 0.0002
 lrf: 0.05
@@ -20,7 +20,7 @@ warmup_momentum: 0.5
 warmup_bias_lr: 0.0002
 weight_decay: 0.00075
 cos_lr: true
-patience: 28
+patience: 15
 mosaic: 0.05
 mixup: 0.0
 copy_paste: 0.0
@@ -35,7 +35,7 @@ shear: 0.0
 perspective: 0.0
 flipud: 0.0
 fliplr: 0.5
-close_mosaic: 35
+close_mosaic: 18
 auto_augment: none
 amp: true
 save_period: 5

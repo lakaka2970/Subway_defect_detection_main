@@ -165,3 +165,138 @@ def weather_augment(img: np.ndarray) -> np.ndarray:
             cv2.line(img, (x, y), (x + dx, y + dy), (200, 210, 220),
                      thickness=1, lineType=cv2.LINE_AA)
     return img
+
+
+def glare_augment(img: np.ndarray, p_streak: float = 0.5) -> np.ndarray:
+    """Simulate reflective glare from metal surfaces and catenary wires.
+
+    Models two real-world scenarios in subway tunnels:
+    1. Specular highlights on polished metal parts (localized bright blobs)
+    2. Light streaks from overhead wires / rails (elongated saturated bands)
+
+    Args:
+        img: Input BGR image (H, W, 3) uint8.
+        p_streak: Probability of adding directional light streaks.
+
+    Returns:
+        Glare-augmented image, same shape and dtype.
+    """
+    img = img.copy()
+    h, w = img.shape[:2]
+    out = img.astype(np.float32)
+
+    # Localized specular highlights (1-4 bright blobs)
+    n_blobs = np.random.randint(1, 5)
+    for _ in range(n_blobs):
+        cx = np.random.randint(w // 8, 7 * w // 8)
+        cy = np.random.randint(h // 8, 7 * h // 8)
+        radius = np.random.randint(max(8, w // 40), max(16, w // 10))
+        intensity = np.random.uniform(0.4, 0.9)
+
+        y, x = np.ogrid[:h, :w]
+        dist = np.sqrt((x - cx) ** 2 + (y - cy) ** 2)
+        blob = np.exp(-(dist ** 2) / (2 * (radius / 2.0) ** 2))
+        blob = np.clip(blob * intensity, 0, 1)
+
+        # Slightly warm or cool tint for the glare
+        tint = np.array([
+            np.random.uniform(0.9, 1.0),
+            np.random.uniform(0.9, 1.0),
+            np.random.uniform(0.95, 1.0),
+        ], dtype=np.float32).reshape(1, 1, 3)
+        out = out * (1 - blob[..., None]) + 255.0 * blob[..., None] * tint
+
+    # Directional light streaks (overhead wire reflections)
+    if np.random.random() < p_streak:
+        n_streaks = np.random.randint(1, 4)
+        for _ in range(n_streaks):
+            angle = np.random.uniform(-30, 30)  # near-horizontal
+            thickness = np.random.randint(2, max(3, w // 100))
+            y_pos = np.random.randint(h // 6, 5 * h // 6)
+            length = np.random.randint(w // 3, w)
+            x_start = np.random.randint(0, max(1, w - length))
+            streak_intensity = np.random.uniform(0.3, 0.7)
+
+            # Draw a soft streak using a rotated rectangle mask
+            mask = np.zeros((h, w), dtype=np.float32)
+            cv2.line(mask, (x_start, y_pos),
+                     (x_start + length, y_pos + int(length * np.tan(np.radians(angle)))),
+                     1.0, thickness=thickness, lineType=cv2.LINE_AA)
+            # Gaussian blur for soft edges
+            ksize = max(3, thickness * 2 + 1)
+            mask = cv2.GaussianBlur(mask, (ksize, ksize), 0)
+            mask = mask * streak_intensity
+
+            out = out * (1 - mask[..., None]) + 255.0 * mask[..., None]
+
+    return np.clip(out, 0, 255).astype(np.uint8)
+
+
+def night_augment(img: np.ndarray, p_ir: float = 0.3) -> np.ndarray:
+    """Simulate night / low-light inspection conditions.
+
+    Models two scenarios:
+    1. Visible-light camera in very low ambient light (severe brightness drop,
+       high sensor noise, slight blue cast from moonlight / LED floodlights)
+    2. Near-infrared (IR) camera mode (desaturated, high contrast, grainy)
+
+    Args:
+        img: Input BGR image (H, W, 3) uint8.
+        p_ir: Probability of simulating IR mode instead of visible low-light.
+
+    Returns:
+        Night-augmented image, same shape and dtype.
+    """
+    img = img.copy()
+    h, w = img.shape[:2]
+
+    if np.random.random() < p_ir:
+        # IR camera simulation: desaturate + contrast stretch + grain
+        gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY).astype(np.float32)
+
+        # Contrast stretch (histogram equalization-like effect)
+        p_low, p_high = np.percentile(gray, [2, 98])
+        if p_high - p_low > 10:
+            gray = (gray - p_low) / (p_high - p_low) * 255.0
+        gray = np.clip(gray, 0, 255)
+
+        # Slight blue-green tint typical of IR sensors
+        out = np.stack([
+            gray * np.random.uniform(0.85, 0.95),  # B
+            gray * np.random.uniform(0.95, 1.05),  # G
+            gray * np.random.uniform(0.80, 0.90),  # R
+        ], axis=-1)
+
+        # Heavy sensor noise (IR sensors are noisier)
+        noise_sigma = np.random.uniform(8, 20)
+        noise = np.random.randn(*out.shape).astype(np.float32) * noise_sigma
+        out = out + noise
+
+    else:
+        # Visible low-light: severe brightness drop + blue cast + noise
+        brightness = np.random.uniform(0.10, 0.30)
+        out = img.astype(np.float32) * brightness
+
+        # Blue-ish cast from LED floodlights / moonlight
+        blue_cast = np.array([
+            np.random.uniform(1.05, 1.25),  # B boost
+            np.random.uniform(0.95, 1.05),  # G
+            np.random.uniform(0.80, 0.95),  # R suppress
+        ], dtype=np.float32).reshape(1, 1, 3)
+        out = out * blue_cast
+
+        # Heavy sensor noise in low light (shot noise + read noise)
+        noise_sigma = np.random.uniform(10, 25)
+        noise = np.random.randn(*out.shape).astype(np.float32) * noise_sigma
+        out = out + noise
+
+        # Occasional vignetting from lens hood
+        if np.random.random() < 0.4:
+            y, x = np.ogrid[:h, :w]
+            cy, cx = h / 2, w / 2
+            dist = np.sqrt((x - cx) ** 2 + (y - cy) ** 2)
+            max_dist = np.sqrt(cx ** 2 + cy ** 2)
+            vignette = 1.0 - 0.4 * (dist / max_dist) ** 2
+            out = out * vignette[..., None]
+
+    return np.clip(out, 0, 255).astype(np.uint8)

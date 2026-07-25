@@ -4,6 +4,37 @@
 
 > 完整规格说明见 [SPECIFICATION.md](../SPECIFICATION.md)
 
+## 当前训练状态（2026-07-25）
+
+| 项目 | 状态 |
+|------|------|
+| 模型架构 | YOLO11s-EMA-SimAM (9.58M, 23.3 GFLOPs) |
+| 当前最优权重 | `weights/stage4_best_finetune.pt` (mAP50=0.622) |
+| 训练数据 | ~48K 图片 / 48,647 标注框 / 7 类 / 负样本 ~40% |
+| 场景增强 | v3: 隧道暗化、日照过曝、运动模糊、白平衡、**反光眩光**、**夜晚暗光/IR** |
+| Copy-Paste | v2: Poisson 融合 + 色彩协调 + 类别均衡采样 + 尺度抖动 |
+| 级联分类器 | 6 个已训练 (CBHPM F1=0.956, CBVPM=0.859, SVHBNM=0.835, SVHBNL=0.868, SVHTNL=0.839) |
+| A2 审计 | 已整合 363 张审查数据 + 576 条待人工审查 (`output/A2人工审查包/`) |
+| 下一轮训练 | Stage 2→5 进行中（复用 1A/1B 公开数据集权重） |
+
+### 训练命令
+
+```bash
+# 从 Stage 2 开始完整训练（复用 1A/1B 权重）
+python scripts/train_pipeline.py --stages 2 3 4 5 --model yolo11s-EMA-SimAM --device 0
+
+# 仅运行特定阶段
+python scripts/train_pipeline.py --stages 3 --model yolo11s-EMA-SimAM --device 0
+
+# 分类器训练
+python scripts/prepare_classifier_data.py --model weights/stage4_best_finetune.pt
+python scripts/train_state_classifier.py --task cbhpm --evaluate
+python scripts/train_state_classifier.py --task cbvpm --evaluate
+python scripts/train_state_classifier.py --task svhbnm --evaluate
+python scripts/train_state_classifier.py --task svhbnl --evaluate
+python scripts/train_state_classifier.py --task svhtnl --evaluate
+```
+
 ## 项目概述
 
 本系统通过车载高速相机采集的接触网图像，自动识别螺栓松动/脱落、开口销缺失、绝缘子破损等 18 类缺陷，替代人工巡检。系统支持**车载端**（单 RTX 4090，离线运行）和**地面端**（双 RTX 4090，WBF 融合）两种部署形态。

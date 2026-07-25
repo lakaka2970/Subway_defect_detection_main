@@ -4,12 +4,22 @@ Train state classifiers for two-stage defect verification.
 
 Trains lightweight MobileNetV3-small classifiers to verify YOLO proposals:
   - CBHPM: binary (normal vs missing)
+  - CBVPM: binary (normal vs missing)
+  - SVHBNM: binary (normal vs missing)
+  - SVHBNL: binary (normal vs loose)
+  - SVHTNL: binary (normal vs loose)
   - VHBNM/VHBNL: 4-class (normal / missing / loose / ambiguous)
 
 Usage::
 
     # Train CBHPM binary classifier
     python scripts/train_state_classifier.py --task cbhpm
+
+    # Train all binary classifiers
+    python scripts/train_state_classifier.py --task cbvpm
+    python scripts/train_state_classifier.py --task svhbnm
+    python scripts/train_state_classifier.py --task svhbnl
+    python scripts/train_state_classifier.py --task svhtnl
 
     # Train VHBNM/VHBNL 4-class classifier
     python scripts/train_state_classifier.py --task vhbnm_vhbnl
@@ -40,6 +50,34 @@ TASK_CONFIGS = {
         "description": "CBHPM binary: normal vs missing (腕臂底座横向销钉缺口)",
         "default_data": "data/classifier/cbhpm",
         "output_weight": "weights/classifier_cbhpm.pt",
+    },
+    "cbvpm": {
+        "class_names": ["normal", "missing"],
+        "num_classes": 2,
+        "description": "CBVPM binary: normal vs missing (腕臂底座垂直销钉缺口)",
+        "default_data": "data/classifier/cbvpm",
+        "output_weight": "weights/classifier_cbvpm.pt",
+    },
+    "svhbnm": {
+        "class_names": ["normal", "missing"],
+        "num_classes": 2,
+        "description": "SVHBNM binary: normal vs missing (单支垂直悬吊槽钢底座螺母缺失)",
+        "default_data": "data/classifier/svhbnm",
+        "output_weight": "weights/classifier_svhbnm.pt",
+    },
+    "svhbnl": {
+        "class_names": ["normal", "loose"],
+        "num_classes": 2,
+        "description": "SVHBNL binary: normal vs loose (单支垂直悬吊槽钢底座螺母松动)",
+        "default_data": "data/classifier/svhbnl",
+        "output_weight": "weights/classifier_svhbnl.pt",
+    },
+    "svhtnl": {
+        "class_names": ["normal", "loose"],
+        "num_classes": 2,
+        "description": "SVHTNL binary: normal vs loose (单支垂直悬吊槽钢上方螺母松动)",
+        "default_data": "data/classifier/svhtnl",
+        "output_weight": "weights/classifier_svhtnl.pt",
     },
     "vhbnm_vhbnl": {
         "class_names": ["normal", "missing", "loose", "ambiguous"],

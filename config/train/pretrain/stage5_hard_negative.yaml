@@ -47,7 +47,7 @@ names: ["VHBNM", "VHBNL", "SVHBNM", "SVHBNL", "SVHTNL", "CBHPM", "CBVPM"]
 epochs: 10
 imgsz: 1280
 conf: 0.01                 # keep validation NMS complete under CPU load
-batch: 4
+batch: -1
 optimizer: AdamW
 lr0: 0.000001
 lrf: 1.0
