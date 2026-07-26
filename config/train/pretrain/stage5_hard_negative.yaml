@@ -6,7 +6,7 @@
 # 目标: 用 Stage 4 模型收集误检 crop, 低 lr 再训练提升 Precision
 #       然后每类单独搜索阈值 (Precision/Recall 双目标 ≥90%)
 # 初始化: Stage 4 best.pt
-# 数据: subway_crops (正样本 7 类) + hard negative crops (无标签)
+# 数据: subway_crops (正样本 12 类) + hard negative crops (无标签)
 #       正样本 : 难负样本 = 1 : 1
 #
 # 难负样本采集重点 (按优先级):
@@ -41,13 +41,14 @@
 path: data/subway_crops
 train: train/images
 val: val/images
-nc: 7
-names: ["VHBNM", "VHBNL", "SVHBNM", "SVHBNL", "SVHTNL", "CBHPM", "CBVPM"]
+nc: 12
+names: ["VHBNM", "VHBNL", "SVHBNM", "SVHBNL", "SVHTNL", "CBHPM", "CBVPM",
+        "RHTBNM", "RHTBNL", "BSBM", "INSD", "DRPS"]
 
 epochs: 10
 imgsz: 1280
 conf: 0.01                 # keep validation NMS complete under CPU load
-batch: -1
+batch: 12
 optimizer: AdamW
 lr0: 0.000001
 lrf: 1.0
@@ -79,3 +80,4 @@ close_mosaic: 0
 # ── 冻结 backbone 前半, 微调 neck 深层 + head ──
 freeze: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
 amp: false
+cache: false

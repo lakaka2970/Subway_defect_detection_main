@@ -1,9 +1,9 @@
 # Stage 2: Custom Contact-Net Domain Adaptation
 # =============================================
-# Target: Transfer from public defect domain to real contact-net 7 class defects.
+# Target: Transfer from public defect domain to real contact-net 12 class defects.
 # Init: Stage 1B best.pt (weights/stage1b_public_backbone.pt).
 # Data: subway_crops (1280px native, resized to 1024 for training).
-# Classes: 7 contact-net defect classes.
+# Classes: 12 contact-net defect classes.
 #
 # Strategy: Freeze backbone first 60% layers, train neck + P3/P4/P5 + attention.
 # Acceptance: mAP50 > 0.35, mAP50-95 > 0.25, all per-class AP > 0.
@@ -11,7 +11,7 @@
 path: data/subway_crops
 train: train/images
 val: val/images
-nc: 7
+nc: 12
 names:
 - VHBNM
 - VHBNL
@@ -20,9 +20,14 @@ names:
 - SVHTNL
 - CBHPM
 - CBVPM
+- RHTBNM
+- RHTBNL
+- BSBM
+- INSD
+- DRPS
 epochs: 20
 imgsz: 1024
-batch: -1
+batch: 12
 optimizer: AdamW
 lr0: 0.0008
 lrf: 0.1
@@ -44,6 +49,7 @@ shear: 0.5
 perspective: 0.0001
 patience: 10
 amp: true
+cache: false
 freeze:
 - 0
 - 1

@@ -29,9 +29,9 @@ _TILE_SUFFIX_RE = re.compile(r"_\d+_\d+$")
 
 # Import class registry for validation bounds
 try:
-    from subway_defect.classes import TRAIN_NC
+    from subway_defect.classes import TRAIN_NC_12 as TRAIN_NC
 except ImportError:
-    TRAIN_NC = 7  # fallback for standalone execution
+    TRAIN_NC = 12  # fallback for standalone execution
 
 MAX_CLASS_ID = TRAIN_NC - 1
 

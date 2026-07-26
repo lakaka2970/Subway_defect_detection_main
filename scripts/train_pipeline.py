@@ -110,17 +110,17 @@ STAGE_DEFS: Dict[str, dict] = {
         "name": "Stage 2: Contact-Net Domain Adaptation",
         "yaml": "stage2_domain_adapt.yaml",
         "output": "weights/stage2_domain_adapt.pt",
-        "epochs": 40,
-        "desc": "Frozen backbone, adapt neck+head to contact-net 7 classes",
+        "epochs": 20,
+        "desc": "Frozen backbone, adapt neck+head to contact-net 12 classes",
         "required": True,
-        "pretrained_from": "1b",       # inherit Stage 1B best.pt (nc=1→7)
-        "nc_mismatch": True,           # 1 class → 7 classes, Detect cls reinit
+        "pretrained_from": "1b",       # inherit Stage 1B best.pt (nc=1→12)
+        "nc_mismatch": True,           # 1 class → 12 classes, Detect cls reinit
     },
     "3": {
         "name": "Stage 3: Main Training (1280px)",
         "yaml": "stage3_main_training.yaml",
         "output": "weights/stage3_main.pt",
-        "epochs": 80,                  # reduced from 120 — peak at epoch ~57
+        "epochs": 60,                  # v2: 60 epochs with patience=20 (was 80/25)
         "desc": "Full unfreeze, 1280px native crops, cos_lr with early stopping",
         "required": True,
         "pretrained_from": "2",        # inherit Stage 2 best.pt
@@ -130,8 +130,8 @@ STAGE_DEFS: Dict[str, dict] = {
         "name": "Stage 4: Short Fine-Tune (Real Distribution)",
         "yaml": "stage4_short_finetune.yaml",
         "output": "weights/stage4_best_finetune.pt",
-        "epochs": 10,
-        "desc": "Low LR (1e-5), zero augment, freeze backbone, real distribution",
+        "epochs": 15,
+        "desc": "Low LR (5e-5), minimal augment, freeze backbone, real distribution",
         "required": True,
         "pretrained_from": "3",        # inherit Stage 3 best.pt
         "nc_mismatch": False,
@@ -156,6 +156,8 @@ _MODEL_FILES = {
     # === Recommended (three-scale) ===
     "yolo11s-EMA-SimAM": "yolo11s-EMA-SimAM.yaml",
     "yolo11m-EMA-SimAM": "yolo11m-EMA-SimAM.yaml",
+    # === v2: P2 four-scale + CoordAtt + LSK (upgraded architecture) ===
+    "yolo11s-v2": "yolo11s-v2.yaml",
     # === [ABLATION ONLY] P2 four-scale models — see P2 deprecation warning ===
     "yolo11s-P2-EMA-SimAM": "yolo11s-P2-EMA-SimAM.yaml",
     "yolo11m-P2-SimAM": "yolo11m-P2-SimAM.yaml",

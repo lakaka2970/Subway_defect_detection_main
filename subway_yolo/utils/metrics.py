@@ -85,6 +85,8 @@ def bbox_iou(
     GIoU: bool = False,
     DIoU: bool = False,
     CIoU: bool = False,
+    WIoU: bool = False,
+    wiou_alpha: float = 1.9,
     eps: float = 1e-7,
 ) -> torch.Tensor:
     """Calculate the Intersection over Union (IoU) between bounding boxes.
@@ -101,10 +103,12 @@ def bbox_iou(
         GIoU (bool, optional): If True, calculate Generalized IoU.
         DIoU (bool, optional): If True, calculate Distance IoU.
         CIoU (bool, optional): If True, calculate Complete IoU.
+        WIoU (bool, optional): If True, calculate Wise-IoU v3 with dynamic non-monotonic focusing.
+        wiou_alpha (float, optional): Focusing strength parameter for WIoU v3. Default is 1.9.
         eps (float, optional): A small value to avoid division by zero.
 
     Returns:
-        (torch.Tensor): IoU, GIoU, DIoU, or CIoU values depending on the specified flags.
+        (torch.Tensor): IoU, GIoU, DIoU, CIoU, or WIoU values depending on the specified flags.
     """
     # Get the coordinates of bounding boxes
     if xywh:  # transform from xywh to xyxy
@@ -128,6 +132,14 @@ def bbox_iou(
 
     # IoU
     iou = inter / union
+    if WIoU:
+        # Wise-IoU v3: dynamic non-monotonic focusing mechanism
+        # https://arxiv.org/abs/2301.10051
+        # Outlier degree: ratio of each IoU to the max IoU (detached to stop gradient)
+        outlier_degree = iou / (iou.detach().max() + eps)
+        # Dynamic focusing weight: emphasizes medium-quality anchors, suppresses outliers
+        weight = (outlier_degree / (outlier_degree.detach().max() + eps)).pow(wiou_alpha)
+        return iou * weight  # WIoU, loss = 1 - WIoU
     if CIoU or DIoU or GIoU:
         cw = b1_x2.maximum(b2_x2) - b1_x1.minimum(b2_x1)  # convex (smallest enclosing box) width
         ch = b1_y2.maximum(b2_y2) - b1_y1.minimum(b2_y1)  # convex height

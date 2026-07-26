@@ -1,6 +1,6 @@
 train: train/images
 val: val/images
-nc: 7
+nc: 12
 names:
 - VHBNM
 - VHBNL
@@ -9,9 +9,14 @@ names:
 - SVHTNL
 - CBHPM
 - CBVPM
-epochs: 25
+- RHTBNM
+- RHTBNL
+- BSBM
+- INSD
+- DRPS
+epochs: 60
 imgsz: 1280
-batch: -1
+batch: 12
 optimizer: AdamW
 lr0: 0.0002
 lrf: 0.05
@@ -20,10 +25,10 @@ warmup_momentum: 0.5
 warmup_bias_lr: 0.0002
 weight_decay: 0.00075
 cos_lr: true
-patience: 15
-mosaic: 0.05
-mixup: 0.0
-copy_paste: 0.0
+patience: 20
+mosaic: 0.5
+mixup: 0.1
+copy_paste: 0.5
 erasing: 0.0
 hsv_h: 0.015
 hsv_s: 0.3
@@ -35,9 +40,10 @@ shear: 0.0
 perspective: 0.0
 flipud: 0.0
 fliplr: 0.5
-close_mosaic: 18
+close_mosaic: 25
 auto_augment: none
 amp: true
+cache: false
 save_period: 5
 path: data/subway_crops
 seed: 0
@@ -45,3 +51,4 @@ conf: 0.01
 multi_scale: 0.0
 fl_gamma: 2.0
 class_weights: []
+iou_type: WIoU

@@ -108,10 +108,16 @@ class DFLoss(nn.Module):
 class BboxLoss(nn.Module):
     """Criterion class for computing training losses for bounding boxes."""
 
-    def __init__(self, reg_max: int = 16):
-        """Initialize the BboxLoss module with regularization maximum and DFL settings."""
+    def __init__(self, reg_max: int = 16, iou_type: str = "CIoU"):
+        """Initialize the BboxLoss module with regularization maximum and DFL settings.
+
+        Args:
+            reg_max (int): Maximum value for DFL regularization.
+            iou_type (str): IoU variant for box loss. Options: "CIoU" (default), "WIoU".
+        """
         super().__init__()
         self.dfl_loss = DFLoss(reg_max) if reg_max > 1 else None
+        self.iou_type = iou_type
 
     def forward(
         self,
@@ -127,7 +133,10 @@ class BboxLoss(nn.Module):
     ) -> tuple[torch.Tensor, torch.Tensor]:
         """Compute IoU and DFL losses for bounding boxes."""
         weight = target_scores.sum(-1)[fg_mask].unsqueeze(-1)
-        iou = bbox_iou(pred_bboxes[fg_mask], target_bboxes[fg_mask], xywh=False, CIoU=True)
+        if self.iou_type == "WIoU":
+            iou = bbox_iou(pred_bboxes[fg_mask], target_bboxes[fg_mask], xywh=False, WIoU=True)
+        else:  # default CIoU
+            iou = bbox_iou(pred_bboxes[fg_mask], target_bboxes[fg_mask], xywh=False, CIoU=True)
         loss_iou = ((1.0 - iou) * weight).sum() / target_scores_sum
 
         # DFL loss
@@ -524,7 +533,7 @@ class v8DetectionLoss:
             stride=self.stride.tolist(),
             topk2=tal_topk2,
         )
-        self.bbox_loss = BboxLoss(m.reg_max).to(device)
+        self.bbox_loss = BboxLoss(m.reg_max, iou_type=getattr(h, "iou_type", "CIoU")).to(device)
         # self.bbox_loss = BboxLoss(m.reg_max, self.hyp.imgsz, self.hyp.iou_type, self.hyp.Inner_iou, self.hyp.Focal,
         #                           self.hyp.Focaler, self.hyp.epochs, self.hyp.alpha).to(device)
         self.proj = torch.arange(m.reg_max, dtype=torch.float, device=device)

@@ -127,6 +127,35 @@ TRAIN_CLASSES: list[str] = [
 TRAIN_NC: int = len(TRAIN_CLASSES)  # 7
 
 # ═══════════════════════════════════════════════════════════════════════════
+# 12-class training subset (expanded — all classes with annotated data)
+# ═══════════════════════════════════════════════════════════════════════════
+#
+# Matches the 12-class indexing in data/Defect_dataset/defect_data.yaml.
+# Classes 7-11 (RHTBNM, RHTBNL, BSBM, INSD, DRPS) were added based on
+# available annotations in Defect_dataset (767 train instances total).
+# The 4 ground-wire clamp classes (GWCSBNM/GWCSBNL/GWCNM/GWCNL) remain
+# excluded — zero annotations exist.
+#
+# IMPORTANT: This list uses the Defect_dataset indexing (0-11), NOT the
+# canonical 16-class indexing. CBHPM=5, CBVPM=6 in the dataset.
+
+TRAIN_CLASSES_12: list[str] = [
+    "VHBNM",   #  0
+    "VHBNL",   #  1
+    "SVHBNM",  #  2
+    "SVHBNL",  #  3
+    "SVHTNL",  #  4
+    "CBHPM",   #  5
+    "CBVPM",   #  6
+    "RHTBNM",  #  7
+    "RHTBNL",  #  8
+    "BSBM",    #  9
+    "INSD",    # 10
+    "DRPS",    # 11
+]
+TRAIN_NC_12: int = len(TRAIN_CLASSES_12)  # 12
+
+# ═══════════════════════════════════════════════════════════════════════════
 # Legacy aliases — for backward compatibility with older checkpoint names
 # ═══════════════════════════════════════════════════════════════════════════
 

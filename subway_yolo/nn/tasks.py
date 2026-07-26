@@ -1441,6 +1441,7 @@ def parse_model(d, ch, verbose=True):
             Classify,
             Conv,
             ConvTranspose,
+            DeformConv2d,
             GhostConv,
             Bottleneck,
             GhostBottleneck,
@@ -1529,7 +1530,7 @@ def parse_model(d, ch, verbose=True):
             if m is C2fCIB:
                 legacy = False
 
-        elif m in {CBAM, ECA, EMA, SimAM}:
+        elif m in {CBAM, CoordAtt, ECA, EMA, LSK, SimAM}:
             c2 = ch[f]
             args = [c2, *args]
 

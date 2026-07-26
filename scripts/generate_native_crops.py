@@ -73,12 +73,14 @@ except ImportError:
 
 SEED = 42
 # Import class registry from project (when run as module)
+# Default: 12-class subset (all classes with annotated data in Defect_dataset)
 try:
-    from subway_defect.classes import TRAIN_CLASSES as CLASS_NAMES, TRAIN_NC as NC
+    from subway_defect.classes import TRAIN_CLASSES_12 as CLASS_NAMES, TRAIN_NC_12 as NC
 except ImportError:
     # Fallback for standalone execution
     CLASS_NAMES = [
         "VHBNM", "VHBNL", "SVHBNM", "SVHBNL", "SVHTNL", "CBHPM", "CBVPM",
+        "RHTBNM", "RHTBNL", "BSBM", "INSD", "DRPS",
     ]
     NC = len(CLASS_NAMES)
 
@@ -305,6 +307,8 @@ def generate_crops(
     multi_scale: bool = False,
     copy_paste: bool = False,
     tight_context: float = 0.02,
+    context_scale: float = 1.0,
+    position_metadata: bool = False,
 ) -> Dict:
     """Generate native-resolution training crops.
 
@@ -413,12 +417,20 @@ def generate_crops(
 
     stats = {
         "crop_size": crop_size,
+        "context_scale": context_scale,
         "source_images": {k: len(v) for k, v in split_sets.items()},
         "positive_crops": {k: 0 for k in split_sets},
         "negative_crops": {k: 0 for k in split_sets},
         "defect_boxes": {k: 0 for k in split_sets},
         "per_class_boxes": {name: 0 for name in CLASS_NAMES},
     }
+
+    # Context window: when context_scale > 1, extract a larger window and
+    # resize to crop_size. This gives the model more structural context.
+    win_size = int(crop_size * context_scale)
+
+    # Position metadata: crop center normalized to source image coords
+    crop_positions: Dict[str, Tuple[float, float]] = {}  # crop_name → (x_norm, y_norm)
 
     if dry_run:
         # Count expected crops
@@ -556,10 +568,10 @@ def generate_crops(
                     used_centers.add((cx_q, cy_q))
 
                     # Crop the image
-                    x1 = cx - crop_size // 2
-                    y1 = cy - crop_size // 2
-                    x2 = x1 + crop_size
-                    y2 = y1 + crop_size
+                    x1 = cx - win_size // 2
+                    y1 = cy - win_size // 2
+                    x2 = x1 + win_size
+                    y2 = y1 + win_size
 
                     # Handle edge cases — shift crop window
                     if x1 < 0:
@@ -580,33 +592,38 @@ def generate_crops(
 
                     # If crop is now too small (near edge), pad
                     actual_w, actual_h = x2 - x1, y2 - y1
-                    if actual_w < crop_size * 0.5 or actual_h < crop_size * 0.5:
+                    if actual_w < win_size * 0.5 or actual_h < win_size * 0.5:
                         continue
 
                     crop = img[y1:y2, x1:x2]
                     if crop.size == 0:
                         continue
 
-                    # Pad to target size if needed
-                    if actual_w < crop_size or actual_h < crop_size:
-                        pad_r = max(0, crop_size - actual_w)
-                        pad_b = max(0, crop_size - actual_h)
+                    # Pad to target window size if needed
+                    if actual_w < win_size or actual_h < win_size:
+                        pad_r = max(0, win_size - actual_w)
+                        pad_b = max(0, win_size - actual_h)
                         crop = cv2.copyMakeBorder(crop, 0, pad_b, 0, pad_r,
                                                   cv2.BORDER_CONSTANT, value=(114, 114, 114))
 
-                    # Find labels that overlap this crop
+                    # Context-scale resize: shrink larger window to crop_size
+                    if context_scale > 1.0:
+                        crop = cv2.resize(crop, (crop_size, crop_size),
+                                          interpolation=cv2.INTER_LINEAR)
+
+                    # Find labels that overlap this crop (use win_size for overlap)
                     crop_lines: List[str] = []
                     for e_cls, e_xc, e_yc, e_w, e_h in entries:
                         overlap = _bbox_overlap(
                             (x1 + x2) / 2, (y1 + y2) / 2,  # crop center
-                            crop_size, crop_size,
+                            win_size, win_size,
                             e_xc, e_yc, e_w, e_h, img_w, img_h,
                         )
                         if overlap >= MIN_BBOX_VISIBILITY:
                             nbox = _normalize_bbox_to_crop(
                                 e_xc, e_yc, e_w, e_h, img_w, img_h,
                                 (x1 + x2) / 2, (y1 + y2) / 2,
-                                crop_size, crop_size,
+                                win_size, win_size,
                             )
                             if nbox:
                                 crop_lines.append(f"{e_cls} {nbox[0]:.6f} {nbox[1]:.6f} "
@@ -622,6 +639,8 @@ def generate_crops(
                         "\n".join(crop_lines) + "\n" if crop_lines else "\n",
                         encoding="utf-8",
                     )
+                    if position_metadata:
+                        crop_positions[crop_name] = (cx / img_w, cy / img_h)
                     img_count += 1
                     box_count += len(crop_lines)
                     stats["positive_crops"][split_tag] += 1
@@ -680,13 +699,13 @@ def generate_crops(
                     break
 
                 # Random center (avoid clustering around existing bboxes)
-                cx = random.randint(crop_size // 2, img_w - crop_size // 2)
-                cy = random.randint(crop_size // 2, img_h - crop_size // 2)
+                cx = random.randint(win_size // 2, img_w - win_size // 2)
+                cy = random.randint(win_size // 2, img_h - win_size // 2)
 
                 # Check: does this crop contain any defect bbox?
                 has_defect = False
                 for _, e_xc, e_yc, e_w, e_h in entries:
-                    overlap = _bbox_overlap(cx, cy, crop_size, crop_size,
+                    overlap = _bbox_overlap(cx, cy, win_size, win_size,
                                             e_xc, e_yc, e_w, e_h, img_w, img_h)
                     if overlap > 0.05:  # even 5% overlap = not truly negative
                         has_defect = True
@@ -695,12 +714,17 @@ def generate_crops(
                     continue
 
                 # Crop
-                x1, y1 = cx - crop_size // 2, cy - crop_size // 2
-                x2, y2 = x1 + crop_size, y1 + crop_size
+                x1, y1 = cx - win_size // 2, cy - win_size // 2
+                x2, y2 = x1 + win_size, y1 + win_size
                 if x1 < 0 or y1 < 0 or x2 > img_w or y2 > img_h:
                     continue
 
                 crop = img[y1:y2, x1:x2]
+
+                # Context-scale resize
+                if context_scale > 1.0:
+                    crop = cv2.resize(crop, (crop_size, crop_size),
+                                      interpolation=cv2.INTER_LINEAR)
 
                 # Skip empty/uniform crops (likely sky, tunnel wall, etc.)
                 std = crop.std()
@@ -739,6 +763,8 @@ def generate_crops(
                     (out_lbl_dir / f"{crop_name}.txt").write_text(
                         "\n".join(cp_labels) + "\n", encoding="utf-8",
                     )
+                if position_metadata:
+                    crop_positions[crop_name] = (cx / img_w, cy / img_h)
                 neg_count += 1
                 stats["negative_crops"][split_tag] += 1
 
@@ -802,6 +828,15 @@ def generate_crops(
                     ]) + "\n",
                     encoding="utf-8",
                 )
+
+    # Save position metadata (crop center normalized to source image)
+    if position_metadata and crop_positions:
+        pos_json = output_dir / "crop_centers.json"
+        pos_json.write_text(
+            json.dumps(crop_positions, indent=None, ensure_ascii=False),
+            encoding="utf-8",
+        )
+        print(f"  Position metadata: {pos_json} ({len(crop_positions)} crops)")
 
     return stats
 
@@ -906,6 +941,19 @@ Examples:
              "Ensures small defects are not clipped at crop edges.",
     )
     parser.add_argument(
+        "--context-scale", type=float, default=1.0,
+        help="Context window multiplier. 1.0 = tight crop (default). "
+             "2.0 = crop 2× larger window then resize to crop-size, giving 2× "
+             "structural context at half effective resolution. Recommended: 2.0 "
+             "for 'loose' defect classes that need surrounding structure.",
+    )
+    parser.add_argument(
+        "--position-metadata", action="store_true",
+        help="Save crop center positions (normalized to source image) as "
+             "crop_centers.json in the output directory. Used for position "
+             "encoding injection during training.",
+    )
+    parser.add_argument(
         "--seed", type=int, default=SEED,
         help=f"Random seed (default: {SEED})",
     )
@@ -924,6 +972,8 @@ Examples:
     print(f"  Source labels : {args.labels}")
     print(f"  Output dir    : {args.output}")
     print(f"  Crop size     : {args.crop_size}×{args.crop_size}")
+    if args.context_scale > 1.0:
+        print(f"  Context window: {int(args.crop_size * args.context_scale)}×{int(args.crop_size * args.context_scale)} → resize {args.crop_size}")
     print(f"  Neg/img       : {args.negatives_per_image}")
     print(f"  Val ratio     : {args.val_ratio}")
     print(f"  Max offset    : ±{args.max_offset} px")
@@ -951,6 +1001,8 @@ Examples:
         multi_scale=args.multi_scale,
         copy_paste=args.copy_paste,
         tight_context=args.tight_context,
+        context_scale=args.context_scale,
+        position_metadata=args.position_metadata,
     )
 
     print(f"\n{'=' * 60}")

@@ -1,0 +1,81 @@
+# Ultralytics YOLO 🚀, AGPL-3.0 license
+# YOLO11s v2 — P2 four-scale + EMA + CoordAtt + LSK
+#
+# Vehicle-side (车载端) upgraded model — single RTX 4090
+# Target: <=10s per 127MP image, Recall >=90%, Precision >=90%
+#
+# Architecture improvements over v1 (yolo11s-EMA-SimAM):
+#   1. P2 detection head (4x downsample) — tiny object Recall +5-8pp
+#   2. CoordAtt on P4 — direction-sensitive attention for "loose" defects
+#   3. LSK on Backbone P3 — adaptive receptive field for varying bolt sizes
+#   4. EMA on P3 (retained from v1) — multi-scale spatial attention
+#   5. SimAM on P2/P5 (retained) — parameter-free noise suppression
+#
+# Attention design:
+#   P2 branch: SimAM    — parameter-free spatial attention (tiny objects)
+#   P3 branch: EMA      — spatial+channel multi-scale attention (small objects)
+#   P4 branch: CoordAtt — coordinate attention, direction-sensitive (medium)
+#   P5 branch: SimAM    — parameter-free spatial attention (large objects)
+#   Backbone P3: LSK    — large selective kernel, adaptive receptive field
+#   Backbone tail: C2PSA (native YOLO11, retained)
+
+# Parameters
+nc: 18  # overridden at runtime by dataset nc
+scales:
+  s: [0.50, 0.50, 1024]  # depth, width, max_channels
+
+# YOLO11 backbone (with LSK after P3 output)
+backbone:
+  # [from, repeats, module, args]
+  - [-1, 1, Conv, [64, 3, 2]]          # 0-P1/2
+  - [-1, 1, Conv, [128, 3, 2]]         # 1-P2/4
+  - [-1, 2, C3k2, [256, False, 0.25]]  # 2
+  - [-1, 1, Conv, [256, 3, 2]]         # 3-P3/8
+  - [-1, 2, C3k2, [512, False, 0.25]]  # 4
+  - [-1, 1, LSK, []]                      # 5 LSK: adaptive receptive field (P3)
+  - [-1, 1, Conv, [512, 3, 2]]         # 6-P4/16
+  - [-1, 2, C3k2, [512, True]]         # 7
+  - [-1, 1, Conv, [1024, 3, 2]]        # 8-P5/32
+  - [-1, 2, C3k2, [1024, True]]        # 9
+  - [-1, 1, SPPF, [1024, 5]]           # 10
+  - [-1, 2, C2PSA, [1024]]             # 11 (native C2PSA retained)
+
+# YOLO11 head (P2 four-scale + EMA + CoordAtt + SimAM)
+head:
+  # FPN up-sample path: P5 -> P4
+  - [-1, 1, nn.Upsample, [None, 2, "nearest"]]   # 12
+  - [[-1, 7], 1, Concat, [1]]                     # 13 (cat backbone P4)
+  - [-1, 2, C3k2, [512, False]]                    # 14
+
+  # FPN up-sample path: P4 -> P3
+  - [-1, 1, nn.Upsample, [None, 2, "nearest"]]   # 15
+  - [[-1, 5], 1, Concat, [1]]                     # 16 (cat backbone P3 + LSK)
+  - [-1, 2, C3k2, [256, False]]                    # 17 (P3/8-small)
+  - [-1, 1, EMA, []]                                # 18 EMA attention (P3)
+
+  # FPN up-sample path: P3 -> P2 (NEW: P2 detection scale)
+  - [-1, 1, nn.Upsample, [None, 2, "nearest"]]   # 19
+  - [[-1, 2], 1, Concat, [1]]                     # 20 (cat backbone P2)
+  - [-1, 2, C3k2, [128, False]]                    # 21 (P2/4-xsmall)
+  - [-1, 1, SimAM, []]                              # 22 SimAM (P2, tiny objects)
+
+  # PAN down-sample path: P2 -> P3
+  - [-1, 1, Conv, [128, 3, 2]]                    # 23
+  - [[-1, 18], 1, Concat, [1]]                     # 24 (cat head P3)
+  - [-1, 2, C3k2, [256, False]]                    # 25 (P3)
+  - [-1, 1, EMA, []]                                # 26 EMA (P3)
+
+  # PAN down-sample path: P3 -> P4
+  - [-1, 1, Conv, [256, 3, 2]]                    # 27
+  - [[-1, 14], 1, Concat, [1]]                     # 28 (cat head P4)
+  - [-1, 2, C3k2, [512, False]]                    # 29 (P4)
+  - [-1, 1, CoordAtt, []]                           # 30 CoordAtt (P4, direction-sensitive)
+
+  # PAN down-sample path: P4 -> P5
+  - [-1, 1, Conv, [512, 3, 2]]                    # 31
+  - [[-1, 11], 1, Concat, [1]]                     # 32 (cat head P5)
+  - [-1, 2, C3k2, [1024, True]]                    # 33 (P5)
+  - [-1, 1, SimAM, []]                              # 34 SimAM (P5)
+
+  # Detection heads (4 scales: P2, P3, P4, P5)
+  - [[22, 26, 30, 34], 1, Detect, [nc]]           # 35 Detect(P2, P3, P4, P5)

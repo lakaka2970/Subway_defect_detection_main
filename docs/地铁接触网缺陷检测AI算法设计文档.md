@@ -66,12 +66,6 @@
 | `flex_wrist_base_vert_pin_missing` | 腕臂底座垂直销钉缺开口销 | serious |
 | `flex_dropper_no_force` | 吊弦不受力 | serious |
 
-#### 通用缺陷
-
-| 编码 | 中文名称 | 严重等级 |
-|------|----------|----------|
-| `foreign_object` | 异物侵入 | normal |
-| `component_deformation` | 部件变形 | normal |
 
 ---
 
