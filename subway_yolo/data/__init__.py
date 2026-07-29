@@ -8,9 +8,11 @@ from ultralytics.data import (
     YOLOConcatDataset,
     YOLODataset,
     YOLOMultiModalDataset,
-    build_dataloader,
     build_grounding,
     build_yolo_dataset,
     converter,
     load_inference_source,
 )
+
+# subway_yolo override: adds multiprocessing_context / persistent_workers for Windows-safe, reusable workers
+from subway_yolo.data.build import build_dataloader

@@ -28,6 +28,7 @@ names:
 epochs: 20
 imgsz: 1024
 batch: 12
+workers: 0
 optimizer: AdamW
 lr0: 0.0008
 lrf: 0.1
@@ -49,7 +50,7 @@ shear: 0.5
 perspective: 0.0001
 patience: 10
 amp: true
-cache: false
+cache: disk
 freeze:
 - 0
 - 1

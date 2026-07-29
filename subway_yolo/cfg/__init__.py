@@ -219,6 +219,7 @@ CFG_BOOL_KEYS = frozenset(
         "verbose",
         "deterministic",
         "single_cls",
+        "persistent_workers",
         "rect",
         "cos_lr",
         "overlap_mask",

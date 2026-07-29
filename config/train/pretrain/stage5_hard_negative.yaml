@@ -48,7 +48,8 @@ names: ["VHBNM", "VHBNL", "SVHBNM", "SVHBNL", "SVHTNL", "CBHPM", "CBVPM",
 epochs: 10
 imgsz: 1280
 conf: 0.01                 # keep validation NMS complete under CPU load
-batch: 12
+batch: 8
+workers: 0
 optimizer: AdamW
 lr0: 0.000001
 lrf: 1.0
@@ -79,5 +80,5 @@ close_mosaic: 0
 
 # ── 冻结 backbone 前半, 微调 neck 深层 + head ──
 freeze: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
-amp: false
-cache: false
+amp: true
+cache: disk

@@ -95,6 +95,10 @@ class DetectionTrainer(BaseTrainer):
         if getattr(dataset, "rect", False) and shuffle and not np.all(dataset.batch_shapes == dataset.batch_shapes[0]):
             LOGGER.warning("'rect=True' is incompatible with DataLoader shuffle, setting shuffle=False")
             shuffle = False
+        # Windows-safe worker options (only take effect when workers > 0). persistent_workers is train-only:
+        # keeping the val loader's workers alive for the whole run would waste memory between validations.
+        mp_context = getattr(self.args, "dataloader_workers_context", None)
+        persistent = getattr(self.args, "persistent_workers", None) if mode == "train" else False
         return build_dataloader(
             dataset,
             batch=batch_size,
@@ -102,6 +106,8 @@ class DetectionTrainer(BaseTrainer):
             shuffle=shuffle,
             rank=rank,
             drop_last=self.args.compile and mode == "train",
+            multiprocessing_context=mp_context,
+            persistent_workers=persistent,
         )
 
     def preprocess_batch(self, batch: dict) -> dict:

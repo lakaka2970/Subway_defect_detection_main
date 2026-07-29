@@ -319,6 +319,8 @@ class DetectionValidator(BaseValidator):
             rank=-1,
             drop_last=self.args.compile,
             pin_memory=self.training,
+            multiprocessing_context=getattr(self.args, "dataloader_workers_context", None),
+            persistent_workers=False,  # don't hold val workers alive across the run
         )
 
     def plot_val_samples(self, batch: Dict[str, Any], ni: int) -> None:

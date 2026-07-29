@@ -120,7 +120,7 @@ STAGE_DEFS: Dict[str, dict] = {
         "name": "Stage 3: Main Training (1280px)",
         "yaml": "stage3_main_training.yaml",
         "output": "weights/stage3_main.pt",
-        "epochs": 60,                  # v2: 60 epochs with patience=20 (was 80/25)
+        "epochs": 45,                  # v2: 45 epochs with patience=15
         "desc": "Full unfreeze, 1280px native crops, cos_lr with early stopping",
         "required": True,
         "pretrained_from": "2",        # inherit Stage 2 best.pt
@@ -523,7 +523,8 @@ def _run_stage(
 
     cfg = _safe_load_yaml(cfg_path)
     cfg["batch"] = batch
-    cfg["workers"] = workers
+    if workers is not None:
+        cfg["workers"] = workers
     cfg["device"] = device
     cfg["project"] = str(run_dir)
     cfg["name"] = stage_name
@@ -782,7 +783,7 @@ Examples:
     print(f"  Stages:   {stage_ids}")
     print(f"  Batch:    {preflight.recommended_batch} (auto)" if not args.batch
           else f"  Batch:    {args.batch} (manual)")
-    print(f"  Workers:  {args.workers or preflight.recommended_workers}")
+    print(f"  Workers:  {args.workers if args.workers is not None else 'per-stage YAML'}")
 
     # ── Warnings ──
     if preflight.warnings:
@@ -804,7 +805,10 @@ Examples:
     print("  [OK] All pre-flight checks passed")
 
     batch = args.batch or preflight.recommended_batch
-    workers = args.workers or preflight.recommended_workers
+    # When --workers is not specified, use the per-stage YAML value instead of
+    # a global default. The spawn-based deadlock fix (subway_yolo/data/build.py)
+    # makes workers>=1 safe on Windows.
+    workers = args.workers  # None means "use YAML config"
 
     # ═════════════════════════════════════════════════════════════════════
     #  GENERATE STAGE CONFIGS (if missing)

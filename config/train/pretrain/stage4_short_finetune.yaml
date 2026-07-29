@@ -35,8 +35,9 @@ epochs: 15
 imgsz: 1280
 conf: 0.01                 # keep validation NMS complete under CPU load
 batch: 12
+workers: 0
 amp: true
-cache: false
+cache: disk
 optimizer: AdamW
 lr0: 0.00005  # 5e-5 — Phase C S4-L winner (+4.7% mAP50 vs 1e-5)
 lrf: 1.0
