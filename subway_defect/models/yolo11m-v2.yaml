@@ -1,15 +1,21 @@
 # Ultralytics YOLO 🚀, AGPL-3.0 license
-# YOLO11s v2 — P2 four-scale + EMA + CoordAtt + LSK
+# YOLO11m v2 — P2 four-scale + EMA + CoordAtt + LSK (Medium variant)
 #
-# Vehicle-side (车载端) upgraded model — single RTX 4090
-# Target: <=10s per 127MP image, Recall >=90%, Precision >=90%
+# Ground-side (地面端) upgraded model — RTX 4090
+# Target: Recall >=90%, Precision >=90%
 #
-# Architecture improvements over v1 (yolo11s-EMA-SimAM):
+# Architecture improvements over yolo11m-EMA-SimAM:
 #   1. P2 detection head (4x downsample) — tiny object Recall +5-8pp
 #   2. CoordAtt on P4 — direction-sensitive attention for "loose" defects
 #   3. LSK on Backbone P3 — adaptive receptive field for varying bolt sizes
-#   4. EMA on P3 (retained from v1) — multi-scale spatial attention
-#   5. SimAM on P2/P5 (retained) — parameter-free noise suppression
+#   4. EMA on P3 (retained) — multi-scale spatial attention
+#   5. SimAM on P2/P5 — parameter-free noise suppression
+#
+# Key differences from yolo11s-v2:
+#   - m-scale: width_mult=1.00 (vs 0.50 for s), ~2x wider channels
+#   - ~25M params (vs ~10M for s-v2), ~80 GFLOPs (vs ~33 for s-v2)
+#   - Expected mAP50 gain: +3-5pp over s-v2 on 12-class defect detection
+#   - VRAM: ~2.0 GB/sample @ 1280px → batch=6-8 on RTX 4090
 #
 # Attention design:
 #   P2 branch: SimAM    — parameter-free spatial attention (tiny objects)
@@ -22,14 +28,7 @@
 # Parameters
 nc: 18  # overridden at runtime by dataset nc
 scales:
-  s: [0.50, 0.50, 1024]  # depth, width, max_channels
-
-# Multi-task auxiliary head: component-type classification on backbone P3
-aux_head:
-  layer: 5           # backbone P3 output (after LSK)
-  num_classes: 9     # 9 component types (VHB, SVHB, SVHTN, CBH, CBV, RHTBN, BSB, INSD, DRPS)
-  loss_weight: 0.1   # auxiliary BCE loss weight
-  dropout: 0.2
+  m: [0.50, 1.00, 1024]  # depth, width, max_channels
 
 # YOLO11 backbone (with LSK after P3 output)
 backbone:

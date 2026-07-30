@@ -59,8 +59,9 @@ SEED = 42
 CONTEXT_SCALE = 1.75
 MIN_CROP_SIZE = 32
 
-# Class indices in the 7-class training set
-CLASS_NAMES = ["VHBNM", "VHBNL", "SVHBNM", "SVHBNL", "SVHTNL", "CBHPM", "CBVPM"]
+# Class indices in the 12-class training set
+CLASS_NAMES = ["VHBNM", "VHBNL", "SVHBNM", "SVHBNL", "SVHTNL", "CBHPM", "CBVPM",
+               "RHTBNM", "RHTBNL", "BSBM", "INSD", "DRPS"]
 
 # State mapping per class:
 #   CBHPM  (idx 5): binary — missing (TP) vs normal (FP)
@@ -69,6 +70,8 @@ CLASS_NAMES = ["VHBNM", "VHBNL", "SVHBNM", "SVHBNL", "SVHTNL", "CBHPM", "CBVPM"]
 #   SVHBNL (idx 3): binary — loose (TP) vs normal (FP)
 #   SVHTNL (idx 4): binary — loose (TP) vs normal (FP)
 #   VHBNM  (idx 0) + VHBNL (idx 1): 4-class — missing/loose/normal/ambiguous
+#   INSD   (idx 10): binary — damage (TP) vs normal (FP) — 绝缘子破损
+#   BSBM   (idx 9): binary — missing (TP) vs normal (FP) — 汇流排螺栓缺失
 CBHPM_IDX = 5
 CBVPM_IDX = 6
 SVHBNM_IDX = 2
@@ -76,6 +79,8 @@ SVHBNL_IDX = 3
 SVHTNL_IDX = 4
 VHBNM_IDX = 0
 VHBNL_IDX = 1
+INSD_IDX = 10
+BSBM_IDX = 9
 
 # Classifier task definitions: task_name → (class_indices, state_map)
 # state_map: det_cls → {tp_state, fp_state}
@@ -115,6 +120,30 @@ CLASSIFIER_TASKS = {
         "tp_state": None,  # per-class: VHBNM→missing, VHBNL→loose
         "fp_state": "normal",
         "class_names": ["normal", "missing", "loose", "ambiguous"],
+    },
+    "vhb_level1": {
+        "class_indices": [VHBNM_IDX, VHBNL_IDX],
+        "tp_state": "defective",   # both missing and loose → "defective"
+        "fp_state": "normal",
+        "class_names": ["normal", "defective"],
+    },
+    "vhb_level2": {
+        "class_indices": [VHBNM_IDX, VHBNL_IDX],
+        "tp_state": None,  # per-class: VHBNM→missing, VHBNL→loose (NO normal class)
+        "fp_state": None,  # no FP — only defective samples used
+        "class_names": ["missing", "loose"],
+    },
+    "insd": {
+        "class_indices": [INSD_IDX],
+        "tp_state": "damage",
+        "fp_state": "normal",
+        "class_names": ["normal", "damage"],
+    },
+    "bsbm": {
+        "class_indices": [BSBM_IDX],
+        "tp_state": "missing",
+        "fp_state": "normal",
+        "class_names": ["normal", "missing"],
     },
 }
 
@@ -264,31 +293,34 @@ def prepare_classifier_data(
                     int(det_xywh[1] + det_xywh[3] / 2),
                 )
 
-                # Determine state based on GT match
-                state = _determine_state(det_cls, det_xyxy, gt_boxes, iou_match_threshold)
-                if state is None:
+                # Determine state and save for ALL matching tasks
+                # (VHBNM/VHBNL detections feed vhbnm_vhbnl, vhb_level1, AND vhb_level2)
+                matching_tasks = _get_all_classifier_tasks(det_cls)
+                if not matching_tasks:
                     continue
 
-                # Determine which classifier task this belongs to
-                task = _get_classifier_task(det_cls)
-                if task is None:
-                    continue
+                crop = None  # lazy extract
+                for task_name in matching_tasks:
+                    state = _determine_state_for_task(
+                        det_cls, det_xyxy, gt_boxes, iou_match_threshold, task_name
+                    )
+                    if state is None:
+                        continue
 
-                stats[f"{task}_{state}"] += 1
+                    stats[f"{task_name}_{state}"] += 1
 
-                if dry_run:
-                    continue
+                    if dry_run:
+                        continue
 
-                # Extract context crop
-                crop = extract_context_crop(img, det_xyxy, context_scale)
-                if crop is None:
-                    continue
+                    if crop is None:
+                        crop = extract_context_crop(img, det_xyxy, context_scale)
+                    if crop is None:
+                        break
 
-                # Save crop
-                out_dir = output_root / task / split / state
-                out_dir.mkdir(parents=True, exist_ok=True)
-                crop_name = f"{img_path.stem}_det{i:03d}_c{det_conf:.2f}.jpg"
-                cv2.imwrite(str(out_dir / crop_name), crop, [cv2.IMWRITE_JPEG_QUALITY, 95])
+                    out_dir = output_root / task_name / split / state
+                    out_dir.mkdir(parents=True, exist_ok=True)
+                    crop_name = f"{img_path.stem}_det{i:03d}_c{det_conf:.2f}.jpg"
+                    cv2.imwrite(str(out_dir / crop_name), crop, [cv2.IMWRITE_JPEG_QUALITY, 95])
 
             if (idx + 1) % 200 == 0:
                 print(f"    [{idx+1}/{len(images)}] processed", flush=True)
@@ -332,17 +364,23 @@ def _determine_state(
 
     if best_iou >= iou_threshold and matched_gt_cls == det_cls:
         # True positive — this is a real defect
-        if task_name == "vhbnm_vhbnl":
+        if task_name in ("vhbnm_vhbnl", "vhb_level2"):
             # Per-class TP state
             return "missing" if det_cls == VHBNM_IDX else "loose"
         return task["tp_state"]
     elif best_iou < iou_threshold:
         # False positive — no matching GT
+        if task["fp_state"] is None:
+            return None  # skip (e.g. vhb_level2: only defective samples)
         return task["fp_state"]
     else:
         # Matched different class — ambiguous (only for vhbnm_vhbnl)
         if task_name == "vhbnm_vhbnl":
             return "ambiguous"
+        if task_name == "vhb_level1":
+            return "defective"  # cross-class match is still defective
+        if task_name == "vhb_level2":
+            return None  # skip ambiguous for level 2
         # For binary tasks, cross-class match is still a FP
         return task["fp_state"]
 
@@ -353,6 +391,50 @@ def _get_classifier_task(det_cls: int) -> str | None:
         if det_cls in task["class_indices"]:
             return task_name
     return None
+
+
+def _get_all_classifier_tasks(det_cls: int) -> list[str]:
+    """Return ALL classifier tasks that include this detection class."""
+    return [
+        name for name, task in CLASSIFIER_TASKS.items()
+        if det_cls in task["class_indices"]
+    ]
+
+
+def _determine_state_for_task(
+    det_cls: int,
+    det_xyxy: Tuple[int, int, int, int],
+    gt_boxes: List[Tuple[int, Tuple[int, int, int, int]]],
+    iou_threshold: float,
+    task_name: str,
+) -> str | None:
+    """Determine state label for a specific classifier task."""
+    task = CLASSIFIER_TASKS[task_name]
+
+    best_iou = 0.0
+    matched_gt_cls = None
+    for gt_cls, gt_xyxy in gt_boxes:
+        iou = box_iou(det_xyxy, gt_xyxy)
+        if iou > best_iou:
+            best_iou = iou
+            matched_gt_cls = gt_cls
+
+    if best_iou >= iou_threshold and matched_gt_cls == det_cls:
+        if task_name in ("vhbnm_vhbnl", "vhb_level2"):
+            return "missing" if det_cls == VHBNM_IDX else "loose"
+        return task["tp_state"]
+    elif best_iou < iou_threshold:
+        if task["fp_state"] is None:
+            return None
+        return task["fp_state"]
+    else:
+        if task_name == "vhbnm_vhbnl":
+            return "ambiguous"
+        if task_name == "vhb_level1":
+            return "defective"
+        if task_name == "vhb_level2":
+            return None
+        return task["fp_state"]
 
 
 def main():

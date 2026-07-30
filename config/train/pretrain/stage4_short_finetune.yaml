@@ -34,10 +34,10 @@ names: ["VHBNM", "VHBNL", "SVHBNM", "SVHBNL", "SVHTNL", "CBHPM", "CBVPM",
 epochs: 15
 imgsz: 1280
 conf: 0.01                 # keep validation NMS complete under CPU load
-batch: 12
+batch: 10
 workers: 0
 amp: true
-cache: disk
+cache: false
 optimizer: AdamW
 lr0: 0.00005  # 5e-5 — Phase C S4-L winner (+4.7% mAP50 vs 1e-5)
 lrf: 1.0

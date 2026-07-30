@@ -423,6 +423,32 @@ class DetectionModel(BaseModel):
             self.info()
             LOGGER.info("")
 
+        # ── Multi-task auxiliary head (optional) ──────────────────────
+        aux_cfg = self.yaml.get("aux_head")
+        if aux_cfg:
+            from subway_defect.modules.AuxHead import AuxClassifyHead
+
+            layer_idx = aux_cfg.get("layer", 5)
+            num_cls = aux_cfg.get("num_classes", 9)
+            # Determine input channels by probing the target layer
+            probe = torch.zeros(1, ch, 256, 256)
+            py = []
+            for m in self.model:
+                if m.f != -1:
+                    probe = py[m.f] if isinstance(m.f, int) else [probe if j == -1 else py[j] for j in m.f]
+                probe = m(probe)
+                py.append(probe if m.i in self.save else None)
+                if m.i == layer_idx:
+                    break
+            in_ch = probe.shape[1]
+            self.aux_head = AuxClassifyHead(in_ch, num_cls, dropout=aux_cfg.get("dropout", 0.2))
+            self._aux_layer_idx = layer_idx
+            self._aux_loss_weight = aux_cfg.get("loss_weight", 0.1)
+            LOGGER.info(
+                f"AuxClassifyHead: layer={layer_idx}, in_channels={in_ch}, "
+                f"num_classes={num_cls}, loss_weight={self._aux_loss_weight}"
+            )
+
     @property
     def end2end(self):
         """Return whether the model uses end-to-end NMS-free detection."""
@@ -509,6 +535,54 @@ class DetectionModel(BaseModel):
         i = (y[-1].shape[-1] // g) * sum(4 ** (nl - 1 - x) for x in range(e))  # indices
         y[-1] = y[-1][..., i:]  # small
         return y
+
+    def loss(self, batch, preds=None):
+        """Compute detection loss + optional auxiliary component-type loss."""
+        if getattr(self, "criterion", None) is None:
+            self.criterion = self.init_criterion()
+
+        img = batch["img"]
+        # ── Auxiliary head: extract intermediate features ──
+        if hasattr(self, "aux_head"):
+            y = []
+            x = img
+            aux_feat = None
+            for m in self.model:
+                if m.f != -1:
+                    x = y[m.f] if isinstance(m.f, int) else [x if j == -1 else y[j] for j in m.f]
+                x = m(x)
+                y.append(x if m.i in self.save else None)
+                if m.i == self._aux_layer_idx:
+                    aux_feat = x
+            preds = x  # last layer output = Detect
+            det_loss = self.criterion(preds, batch)
+
+            # Build multi-label target from batch class indices
+            from subway_defect.classes import build_component_type_matrix
+
+            B = img.shape[0]
+            nc_aux = self.aux_head.head[-1].out_features
+            target = torch.zeros(B, nc_aux, device=img.device)
+            cls_indices = batch["cls"].long().squeeze(-1)  # (total_objects,)
+            batch_indices = batch["batch_idx"].long()       # (total_objects,)
+            comp_mat = torch.tensor(
+                build_component_type_matrix(), dtype=torch.float32, device=img.device
+            )  # (nc, num_component_types)
+            for i in range(cls_indices.shape[0]):
+                b = batch_indices[i].item()
+                c = cls_indices[i].item()
+                if c < comp_mat.shape[0]:
+                    target[b] = torch.maximum(target[b], comp_mat[c])
+
+            aux_logits = self.aux_head(aux_feat)
+            aux_loss = nn.functional.binary_cross_entropy_with_logits(aux_logits, target)
+            total = tuple(d + self._aux_loss_weight * aux_loss for d in det_loss)
+            return total
+
+        # ── Standard path (no auxiliary head) ──
+        if preds is None:
+            preds = self.forward(img)
+        return self.criterion(preds, batch)
 
     def init_criterion(self):
         """Initialize the loss criterion for the DetectionModel."""

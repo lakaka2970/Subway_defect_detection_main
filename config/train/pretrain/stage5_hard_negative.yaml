@@ -26,14 +26,15 @@
 #   - freeze: [0-9] → [0-7] (slightly less frozen — allow neck adaptation)
 #   - NO auto_augment (raw real distribution only)
 #
-# 操作流程 (v2 — 脚本已实现):
+# 操作流程 (v3 — 完整自动化):
 #   1. python scripts/collect_hard_negatives.py --model weights/stage4_best_finetune.pt
-#      → 输出: data/hard_negatives/{VHBNM,VHBNL,SVHBNM,...}/ + summary.json
+#      → 输出: data/hard_negatives/{VHBNM,VHBNL,...,DRPS}/ + summary.json
 #   2. [可选] 人工快速确认误检框 (抽查 50 张 FP crop)
-#   3. 将 hard_negatives/ 下各子目录复制到 subway_crops/train/images/
-#      (正样本:难负样本 = 1:1 混合)
-#   4. 此阶段训练: python scripts/train_pipeline.py --stages 5 --model ...
-#   5. python scripts/calibrate_thresholds.py --model weights/stage5_calibrated.pt
+#   3. python scripts/mix_hard_negatives.py --ratio 1.0
+#      → 将难负样本以 1:1 比例混入 subway_crops/train/ (空标签)
+#   4. python scripts/train_pipeline.py --stages 5 --model yolo11s-v2
+#   5. python scripts/mix_hard_negatives.py --undo  (训练后清理)
+#   6. python scripts/calibrate_thresholds.py --model weights/stage5_calibrated.pt
 #      → 输出: data/calibrated_thresholds/thresholds.json (每类最优置信度阈值)
 # ============================================================================
 
@@ -48,7 +49,7 @@ names: ["VHBNM", "VHBNL", "SVHBNM", "SVHBNL", "SVHTNL", "CBHPM", "CBVPM",
 epochs: 10
 imgsz: 1280
 conf: 0.01                 # keep validation NMS complete under CPU load
-batch: 8
+batch: 10
 workers: 0
 optimizer: AdamW
 lr0: 0.000001
@@ -81,4 +82,4 @@ close_mosaic: 0
 # ── 冻结 backbone 前半, 微调 neck 深层 + head ──
 freeze: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
 amp: true
-cache: disk
+cache: false

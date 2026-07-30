@@ -27,7 +27,7 @@ names:
 - DRPS
 epochs: 20
 imgsz: 1024
-batch: 12
+batch: 16
 workers: 0
 optimizer: AdamW
 lr0: 0.0008
@@ -50,7 +50,7 @@ shear: 0.5
 perspective: 0.0001
 patience: 10
 amp: true
-cache: disk
+cache: false
 freeze:
 - 0
 - 1

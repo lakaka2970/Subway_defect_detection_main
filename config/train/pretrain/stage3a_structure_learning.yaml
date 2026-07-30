@@ -1,0 +1,87 @@
+# ============================================================================
+# Stage 3A: Structure Learning (Two-Stage Training Phase 1)
+# ============================================================================
+# 目标: 通过强数据增强建立稳健的部件结构表征
+# 初始化: Stage 2 best.pt
+# 数据: subway_crops (接触网缺陷, 12 类)
+#
+# 策略:
+#   - 强 mosaic + copy_paste + mixup: 让模型在极端变化下学习部件结构
+#   - 较大的 scale/shear: 模拟不同拍摄角度和距离
+#   - 25 epochs: 为后续缺陷精辨阶段打好结构基础
+#   - WIoU 损失: 动态权重, 对尺度差异大的目标友好
+#
+# 与 Stage 3 原版的关系:
+#   - Stage 3 (原版) = Stage 3A + Stage 3B (本配置拆分为二)
+#   - 原版 45 epochs 混合增强 → 新版 25+20 epochs 先强后弱
+# ============================================================================
+
+train: train/images
+val: val/images
+nc: 12
+names:
+- VHBNM
+- VHBNL
+- SVHBNM
+- SVHBNL
+- SVHTNL
+- CBHPM
+- CBVPM
+- RHTBNM
+- RHTBNL
+- BSBM
+- INSD
+- DRPS
+epochs: 25
+imgsz: 1280
+batch: 8
+workers: 0
+optimizer: AdamW
+lr0: 0.0002
+lrf: 0.05
+warmup_epochs: 3
+warmup_momentum: 0.5
+warmup_bias_lr: 0.0002
+weight_decay: 0.00075
+cos_lr: true
+patience: 15
+close_mosaic: 0          # 全程开 mosaic (结构学习阶段)
+amp: true
+cache: false
+save_period: 5
+path: data/subway_crops
+seed: 0
+conf: 0.01
+multi_scale: 0.0
+fl_gamma: 2.0
+class_weights:
+  - 1.0   # VHBNM
+  - 1.5   # VHBNL (松动, 难)
+  - 1.0   # SVHBNM
+  - 1.5   # SVHBNL (松动, 难)
+  - 1.3   # SVHTNL (松动, 较难)
+  - 0.8   # CBHPM (易)
+  - 0.8   # CBVPM (易)
+  - 1.2   # RHTBNM (少样本)
+  - 1.5   # RHTBNL (难+少样本)
+  - 1.0   # BSBM
+  - 0.9   # INSD
+  - 1.2   # DRPS
+iou_type: WIoU
+
+# ── 强数据增强 (结构学习) ──
+mosaic: 0.8              # 80% mosaic — 极端组合迫使模型学习部件结构
+mixup: 0.4               # 强 mixup — 不同场景融合
+copy_paste: 0.5          # 强 copy-paste — 增加小目标多样性
+erasing: 0.0
+hsv_h: 0.02
+hsv_s: 0.4               # 较强的颜色抖动
+hsv_v: 0.4
+degrees: 3.0             # 较大旋转
+translate: 0.1           # 较大平移
+scale: 0.4               # 较大尺度变化 (0.6-1.4x)
+shear: 0.5               # 模拟倾斜拍摄
+perspective: 0.0001
+flipud: 0.0
+fliplr: 0.5
+auto_augment: none

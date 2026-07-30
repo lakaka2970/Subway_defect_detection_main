@@ -65,8 +65,12 @@ class HardwareProfile:
         ("yolo11s", 1280): 0.85,
         ("yolo11m", 640):  0.55,
         ("yolo11m", 1024): 1.10,
+        ("yolo11m", 1280): 1.50,
         ("yolo11m-P2", 640):  0.70,
         ("yolo11m-P2", 1024): 1.40,
+        # v2 (P2 + CoordAtt + LSK + DCNv4) — heavier than standard P2 variants
+        ("yolo11m-P2-v2", 1024): 1.70,
+        ("yolo11m-P2-v2", 1280): 2.00,
     }
 
     @classmethod
@@ -165,10 +169,14 @@ class HardwareProfile:
         m = model_path.lower()
         if "yolo11n" in m:
             return "yolo11n"
+        if "yolo11m" in m and "v2" in m:
+            return "yolo11m-P2-v2"  # v2 = P2 + CoordAtt + LSK + DCNv4, heaviest
         if "yolo11m" in m and "p2" in m:
             return "yolo11m-P2"
         if "yolo11m" in m:
             return "yolo11m"
+        if "yolo11s" in m and "v2" in m:
+            return "yolo11s"  # use existing s-scale VRAM entries
         return "yolo11s"
 
     def recommend_batch_size(

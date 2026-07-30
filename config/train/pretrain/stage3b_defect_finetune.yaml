@@ -1,0 +1,85 @@
+# ============================================================================
+# Stage 3B: Defect Fine-Grained Discrimination (Two-Stage Training Phase 2)
+# ============================================================================
+# 目标: 在接近真实分布的轻增强条件下, 精调细微缺陷特征的判别能力
+# 初始化: Stage 3A best.pt
+# 数据: subway_crops (接触网缺陷, 12 类)
+#
+# 策略:
+#   - 关闭 mosaic，仅保留轻量增强
+#   - 保持 class_weights 与 3A 一致
+#   - 20 epochs, 学习率从 3A 终点继续衰减
+#   - WIoU 损失: 持续受益于动态权重
+#
+# 预期收益: 整体 mAP +2-3pp (vs 原版 45 epoch 单阶段训练)
+# ============================================================================
+
+train: train/images
+val: val/images
+nc: 12
+names:
+- VHBNM
+- VHBNL
+- SVHBNM
+- SVHBNL
+- SVHTNL
+- CBHPM
+- CBVPM
+- RHTBNM
+- RHTBNL
+- BSBM
+- INSD
+- DRPS
+epochs: 20
+imgsz: 1280
+batch: 8
+workers: 0
+optimizer: AdamW
+lr0: 0.0001              # 3A 终点的一半, 精细调优
+lrf: 0.02                # 更低的最终 LR
+warmup_epochs: 0         # 无需 warmup — 从 3A 继续
+warmup_momentum: 0.5
+warmup_bias_lr: 0.0001
+weight_decay: 0.0005
+cos_lr: true
+patience: 10             # 早停更激进 (20 epoch 足够)
+close_mosaic: 0
+amp: true
+cache: false
+save_period: 5
+path: data/subway_crops
+seed: 0
+conf: 0.01
+multi_scale: 0.0
+fl_gamma: 2.0
+class_weights:
+  - 1.0   # VHBNM
+  - 1.5   # VHBNL (松动, 难)
+  - 1.0   # SVHBNM
+  - 1.5   # SVHBNL (松动, 难)
+  - 1.3   # SVHTNL (松动, 较难)
+  - 0.8   # CBHPM (易)
+  - 0.8   # CBVPM (易)
+  - 1.2   # RHTBNM (少样本)
+  - 1.5   # RHTBNL (难+少样本)
+  - 1.0   # BSBM
+  - 0.9   # INSD
+  - 1.2   # DRPS
+iou_type: WIoU
+
+# ── 轻数据增强 (缺陷精辨) ──
+mosaic: 0.1              # 10% mosaic — 极少, 接近真实分布
+mixup: 0.0               # 关闭 — 不破坏细微缺陷特征
+copy_paste: 0.2          # 轻量 copy-paste — 仅增加少数类样本
+erasing: 0.0
+hsv_h: 0.01
+hsv_s: 0.15              # 极轻颜色抖动
+hsv_v: 0.15
+degrees: 1.0             # 微小旋转
+translate: 0.03
+scale: 0.15              # 小尺度变化
+shear: 0.0
+perspective: 0.0
+flipud: 0.0
+fliplr: 0.5
+auto_augment: none

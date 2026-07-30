@@ -108,9 +108,20 @@ def train_classifier(
     dev = torch.device(f"cuda:{device}" if device not in ("", "cpu") else "cpu")
     model = model.to(dev)
 
-    # Class-weighted loss
+    # Class-weighted loss (inverse-frequency weighting for imbalanced data)
     num_classes = model.num_classes
-    criterion = nn.CrossEntropyLoss()
+    class_counts = train_loader.dataset.get_class_counts()  # {name: count}
+    class_names = train_loader.dataset.class_names
+    total = sum(class_counts.values())
+    if total > 0 and len(class_counts) == num_classes:
+        weights = torch.tensor(
+            [total / (num_classes * max(class_counts.get(class_names[c], 1), 1))
+             for c in range(num_classes)],
+            dtype=torch.float32,
+        ).to(dev)
+        criterion = nn.CrossEntropyLoss(weight=weights)
+    else:
+        criterion = nn.CrossEntropyLoss()
 
     optimizer = optim.AdamW(
         filter(lambda p: p.requires_grad, model.parameters()),

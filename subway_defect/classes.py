@@ -156,6 +156,55 @@ TRAIN_CLASSES_12: list[str] = [
 TRAIN_NC_12: int = len(TRAIN_CLASSES_12)  # 12
 
 # ═══════════════════════════════════════════════════════════════════════════
+# Component-type grouping (for multi-task auxiliary head)
+# ═══════════════════════════════════════════════════════════════════════════
+#
+# Maps each defect class to its physical component type.  The auxiliary
+# head predicts which component types are present in the image (multi-label
+# BCE), providing a structural learning signal to the backbone.
+
+COMPONENT_TYPES: list[str] = [
+    "VHB",      # 0 — 垂直悬吊安装底座 (VHBNM, VHBNL)
+    "SVHB",     # 1 — 单支垂直悬吊槽钢底座 (SVHBNM, SVHBNL)
+    "SVHTN",    # 2 — 单支垂直悬吊槽钢上方 (SVHTNL)
+    "CBH",      # 3 — 腕臂底座横向 (CBHPM)
+    "CBV",      # 4 — 腕臂底座垂直 (CBVPM)
+    "RHTBN",    # 5 — 刚性悬挂吊柱顶板 (RHTBNM, RHTBNL)
+    "BSB",      # 6 — 汇流排中间接头 (BSBM)
+    "INSD",     # 7 — 绝缘子 (INSD)
+    "DRPS",     # 8 — 吊弦 (DRPS)
+]
+NUM_COMPONENT_TYPES: int = len(COMPONENT_TYPES)  # 9
+
+# defect class name → component type index
+_DEFECT_TO_COMPONENT: dict[str, int] = {
+    "VHBNM": 0, "VHBNL": 0,
+    "SVHBNM": 1, "SVHBNL": 1,
+    "SVHTNL": 2,
+    "CBHPM": 3,
+    "CBVPM": 4,
+    "RHTBNM": 5, "RHTBNL": 5,
+    "BSBM": 6,
+    "INSD": 7,
+    "DRPS": 8,
+}
+
+
+def defect_cls_to_component_type(cls_id: int) -> int:
+    """Map a 12-class defect index to its component-type index (0-8)."""
+    name = TRAIN_CLASSES_12[cls_id]
+    return _DEFECT_TO_COMPONENT[name]
+
+
+def build_component_type_matrix() -> list[list[int]]:
+    """Return a (12, 9) binary matrix: row i has 1 at component type of class i."""
+    mat = [[0] * NUM_COMPONENT_TYPES for _ in range(TRAIN_NC_12)]
+    for cls_id in range(TRAIN_NC_12):
+        comp_id = defect_cls_to_component_type(cls_id)
+        mat[cls_id][comp_id] = 1
+    return mat
+
+# ═══════════════════════════════════════════════════════════════════════════
 # Legacy aliases — for backward compatibility with older checkpoint names
 # ═══════════════════════════════════════════════════════════════════════════
 

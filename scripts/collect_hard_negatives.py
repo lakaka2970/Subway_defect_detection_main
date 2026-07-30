@@ -61,10 +61,14 @@ MIN_CROP_SIZE = 32          # minimum crop size in pixels
 DEFAULT_OUTPUT = Path("data/hard_negatives")
 
 # Class names (must match training config)
-CLASS_NAMES = [
-    "VHBNM", "VHBNL", "SVHBNM", "SVHBNL", "SVHTNL", "CBHPM", "CBVPM",
-]
-NC = len(CLASS_NAMES)
+try:
+    from subway_defect.classes import TRAIN_CLASSES_12 as CLASS_NAMES, TRAIN_NC_12 as NC
+except ImportError:
+    CLASS_NAMES = [
+        "VHBNM", "VHBNL", "SVHBNM", "SVHBNL", "SVHTNL", "CBHPM", "CBVPM",
+        "RHTBNM", "RHTBNL", "BSBM", "INSD", "DRPS",
+    ]
+    NC = len(CLASS_NAMES)
 
 
 # ── Helpers ──────────────────────────────────────────────────────────────────

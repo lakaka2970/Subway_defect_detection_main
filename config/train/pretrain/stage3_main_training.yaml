@@ -16,7 +16,7 @@ names:
 - DRPS
 epochs: 45
 imgsz: 1280
-batch: 12
+batch: 12  # s-scale; m-scale auto → ~6
 workers: 2
 persistent_workers: true
 dataloader_workers_context: spawn
@@ -46,12 +46,24 @@ fliplr: 0.5
 close_mosaic: 35
 auto_augment: none
 amp: true
-cache: disk
+cache: false
 save_period: 5
 path: data/subway_crops
 seed: 0
 conf: 0.01
 multi_scale: 0.0
 fl_gamma: 2.0
-class_weights: []
+class_weights:
+  - 1.0   # VHBNM (螺母缺失, 中等难度)
+  - 1.5   # VHBNL (螺母松动, 视觉差异小, 难)
+  - 1.0   # SVHBNM (槽钢螺母缺失, 中等)
+  - 1.5   # SVHBNL (槽钢螺母松动, 难)
+  - 1.3   # SVHTNL (T型螺母松动, 较难)
+  - 0.8   # CBHPM (横向销钉缺口, 特征明显, 易)
+  - 0.8   # CBVPM (垂直销钉缺口, 特征明显, 易)
+  - 1.2   # RHTBNM (吊柱螺母缺失, 样本少)
+  - 1.5   # RHTBNL (吊柱螺母松动, 难+样本少)
+  - 1.0   # BSBM (接头螺栓缺失, 中等)
+  - 0.9   # INSD (绝缘子破损, 特征明显但FP高)
+  - 1.2   # DRPS (吊弦不受力, 形态多变)
 iou_type: WIoU

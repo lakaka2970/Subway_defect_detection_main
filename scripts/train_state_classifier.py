@@ -86,6 +86,34 @@ TASK_CONFIGS = {
         "default_data": "data/classifier/vhbnm_vhbnl",
         "output_weight": "weights/classifier_vhbnm_vhbnl.pt",
     },
+    "vhb_level1": {
+        "class_names": ["normal", "defective"],
+        "num_classes": 2,
+        "description": "VHB hierarchical L1: normal vs defective (is there any problem?)",
+        "default_data": "data/classifier/vhb_level1",
+        "output_weight": "weights/classifier_vhb_level1.pt",
+    },
+    "vhb_level2": {
+        "class_names": ["missing", "loose"],
+        "num_classes": 2,
+        "description": "VHB hierarchical L2: missing vs loose (what type of defect?)",
+        "default_data": "data/classifier/vhb_level2",
+        "output_weight": "weights/classifier_vhb_level2.pt",
+    },
+    "insd": {
+        "class_names": ["normal", "damage"],
+        "num_classes": 2,
+        "description": "INSD binary: normal vs damage (绝缘子破损) — P1 high-FP reduction target",
+        "default_data": "data/classifier/insd",
+        "output_weight": "weights/classifier_insd.pt",
+    },
+    "bsbm": {
+        "class_names": ["normal", "missing"],
+        "num_classes": 2,
+        "description": "BSBM binary: normal vs missing (汇流排中间接头螺栓缺失) — critical defect",
+        "default_data": "data/classifier/bsbm",
+        "output_weight": "weights/classifier_bsbm.pt",
+    },
 }
 
 
