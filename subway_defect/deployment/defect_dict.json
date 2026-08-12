@@ -1,0 +1,131 @@
+{
+  "_description": "地铁接触网缺陷类型编码字典 — 前后端 ↔ DL 统一契约（单一事实来源）",
+  "_source": "docs/接触网缺陷类型详解.docx",
+  "_version": "1.0",
+  "_updated": "2026-07-26",
+  "_note": "所有新增/变更缺陷类型必须先更新此文件，再修改代码与模型训练标签",
+  "severity_levels": {
+    "minor": { "label": "轻微", "description": "轻微异常，不影响运行" },
+    "normal": { "label": "一般", "description": "一般缺陷，需关注" },
+    "serious": { "label": "严重", "description": "严重缺陷，影响安全" },
+    "critical": { "label": "危急", "description": "危急缺陷，立即停运" }
+  },
+  "categories": {
+    "rigid_catenary": { "label": "刚性接触网", "description": "刚性接触网结构相关缺陷" },
+    "flexible_catenary": { "label": "柔性接触网", "description": "柔性接触网结构相关缺陷" }
+  },
+  "defects": [
+    {
+      "code": "VHBNM",
+      "name_cn": "垂直悬吊安装底座螺母缺失",
+      "severity": "serious",
+      "category": "rigid_catenary",
+      "description": "垂直悬吊安装底座（隧道顶部盾构片与单支垂直悬吊槽钢上端连接处的金属基座）上的螺母缺失"
+    },
+    {
+      "code": "VHBNL",
+      "name_cn": "垂直悬吊安装底座螺母松动",
+      "severity": "serious",
+      "category": "rigid_catenary",
+      "description": "垂直悬吊安装底座上的螺母出现松动"
+    },
+    {
+      "code": "SVHBNM",
+      "name_cn": "单支垂直悬吊槽钢底座螺母缺失",
+      "severity": "serious",
+      "category": "rigid_catenary",
+      "description": "单支垂直悬吊槽钢上端法兰盘部位（通过双螺母与上方垂直悬吊安装底座连接处）的螺母缺失"
+    },
+    {
+      "code": "SVHBNL",
+      "name_cn": "单支垂直悬吊槽钢底座螺母松动",
+      "severity": "serious",
+      "category": "rigid_catenary",
+      "description": "单支垂直悬吊槽钢底座（上端法兰盘部位）的螺母出现松动"
+    },
+    {
+      "code": "SVHTNL",
+      "name_cn": "单支垂直悬吊槽钢上方螺母松动",
+      "severity": "normal",
+      "category": "rigid_catenary",
+      "description": "单支垂直悬吊槽钢上方（调节螺母或锁紧螺母）出现松动"
+    },
+    {
+      "code": "RHTBNM",
+      "name_cn": "刚性悬挂吊柱顶板底面螺母缺失",
+      "severity": "serious",
+      "category": "rigid_catenary",
+      "description": "刚性悬挂吊柱（垂直安装的方形金属杆）最上端与隧道顶部连接处顶板底面的螺母缺失"
+    },
+    {
+      "code": "RHTBNL",
+      "name_cn": "刚性悬挂吊柱顶板底面螺母松动",
+      "severity": "serious",
+      "category": "rigid_catenary",
+      "description": "刚性悬挂吊柱顶板底面的螺母出现松动"
+    },
+    {
+      "code": "GWCSBNM",
+      "name_cn": "地线线夹托板安装底座螺母缺失",
+      "severity": "serious",
+      "category": "rigid_catenary",
+      "description": "地线线夹托板的安装底座上螺母缺失"
+    },
+    {
+      "code": "GWCSBNL",
+      "name_cn": "地线线夹托板安装底座螺母松动",
+      "severity": "serious",
+      "category": "rigid_catenary",
+      "description": "地线线夹托板的安装底座上螺母出现松动"
+    },
+    {
+      "code": "GWCNM",
+      "name_cn": "地线线夹螺母缺失",
+      "severity": "serious",
+      "category": "rigid_catenary",
+      "description": "地线线夹上的螺母缺失"
+    },
+    {
+      "code": "GWCNL",
+      "name_cn": "地线线夹螺母松动",
+      "severity": "serious",
+      "category": "rigid_catenary",
+      "description": "地线线夹上的螺母出现松动"
+    },
+    {
+      "code": "BSBM",
+      "name_cn": "汇流排中间接头螺栓缺失",
+      "severity": "critical",
+      "category": "rigid_catenary",
+      "description": "汇流排（多根平行长条形铝合金导体）中间接头的连接螺栓缺失 — 危急缺陷"
+    },
+    {
+      "code": "INSD",
+      "name_cn": "绝缘子破损",
+      "severity": "critical",
+      "category": "rigid_catenary",
+      "description": "绝缘子（水平排列的带伞裙圆柱形部件）出现破损、裂纹或闪络痕迹 — 危急缺陷"
+    },
+    {
+      "code": "CBHPM",
+      "name_cn": "腕臂底座横向销钉缺口",
+      "severity": "serious",
+      "category": "flexible_catenary",
+      "description": "腕臂底座（混凝土支柱与腕臂绝缘子连接处的基础金属构件）横向销钉缺失开口销"
+    },
+    {
+      "code": "CBVPM",
+      "name_cn": "腕臂底座垂直销钉缺口",
+      "severity": "serious",
+      "category": "flexible_catenary",
+      "description": "腕臂底座垂直销钉缺失开口销"
+    },
+    {
+      "code": "DRPS",
+      "name_cn": "吊弦不受力",
+      "severity": "serious",
+      "category": "flexible_catenary",
+      "description": "吊弦（连接承力索与接触线的垂直短金属线）松弛、断裂或不受力"
+    }
+  ]
+}

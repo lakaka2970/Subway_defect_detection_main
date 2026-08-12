@@ -5,7 +5,7 @@
 #
 # 目标: 真正低学习率短微调, 在真实分布上精调, 早停防退化
 # 初始化: Stage 3 best.pt
-# 数据: subway_crops (接触网缺陷, 12 类)
+# 数据: train_data_3 (接触网缺陷, 16 类)
 #
 # v2 changes (2026-06-27) — CRITICAL FIX:
 #   - warmup_epochs: 3 → 0 (NO warmup — avoid bias LR spike)
@@ -24,18 +24,19 @@
 # ============================================================================
 
 # ── 数据集 ──
-path: data/subway_crops
+path: data/train_data_3
 train: train/images
 val: val/images
-nc: 12
+nc: 16
 names: ["VHBNM", "VHBNL", "SVHBNM", "SVHBNL", "SVHTNL", "CBHPM", "CBVPM",
-        "RHTBNM", "RHTBNL", "BSBM", "INSD", "DRPS"]
+        "RHTBNM", "RHTBNL", "GWCSBNM", "GWCSBNL", "GWCNM", "GWCNL",
+        "BSBM", "INSD", "DRPS"]
 
 epochs: 15
 imgsz: 1280
 conf: 0.01                 # keep validation NMS complete under CPU load
-batch: 10
-workers: 0
+batch: 16
+workers: 8
 amp: true
 cache: false
 optimizer: AdamW

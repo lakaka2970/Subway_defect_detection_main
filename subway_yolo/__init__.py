@@ -16,6 +16,18 @@ from subway_yolo.utils.downloads import download
 
 settings = SETTINGS
 
+# Monkey-patch ultralytics BaseModel.predict to accept 'visualize' kwarg
+# ultralytics >= 8.2 removed visualize support from BaseModel.predict()
+# but subway_yolo's predictor may still pass it through internal code paths
+try:
+    import ultralytics.nn.tasks as _ult_tasks
+    _orig_base_predict = _ult_tasks.BaseModel.predict
+    def _patched_predict(self, x, *args, visualize=False, **kwargs):
+        return _orig_base_predict(self, x, *args, **kwargs)
+    _ult_tasks.BaseModel.predict = _patched_predict
+except Exception:
+    pass  # silent fallback — patch is non-critical
+
 MODELS = ("YOLO", "RTDETR")
 
 __all__ = (

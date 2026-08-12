@@ -206,3 +206,17 @@ calibration_*.npy
 # Training logs
 args.yaml
 results.csv
+
+# Operational utility scripts with hardcoded cloud credentials (never commit)
+/scripts/_*.py
+/scripts/ssh_pass.sh
+/scripts/upload_labels.py
+/scripts/sync_*.py
+/scripts/sync_log.txt
+/scripts/_launch.sh
+
+# AI scratch / helper output
+/.qwen/
+
+# Transient status-check outputs
+/scripts/_*.txt

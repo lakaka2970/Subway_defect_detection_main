@@ -60,18 +60,29 @@ CONTEXT_MARGIN = 0.20      # extra margin around bbox when cropping (20%)
 MIN_CROP_SIZE = 32          # minimum crop size in pixels
 DEFAULT_OUTPUT = Path("data/hard_negatives")
 
-# Class names (must match training config)
-try:
-    from subway_defect.classes import TRAIN_CLASSES_12 as CLASS_NAMES, TRAIN_NC_12 as NC
-except ImportError:
-    CLASS_NAMES = [
-        "VHBNM", "VHBNL", "SVHBNM", "SVHBNL", "SVHTNL", "CBHPM", "CBVPM",
-        "RHTBNM", "RHTBNL", "BSBM", "INSD", "DRPS",
-    ]
-    NC = len(CLASS_NAMES)
+# Class names are read from the data YAML at runtime via _load_class_names().
+# The hardcoded fallback below matches the 16-class train_data_2 order (2026-08).
+_FALLBACK_CLASS_NAMES_16 = [
+    "VHBNM", "VHBNL", "SVHBNM", "SVHBNL", "SVHTNL", "CBHPM", "CBVPM",
+    "RHTBNM", "RHTBNL", "GWCSBNM", "GWCSBNL", "GWCNM", "GWCNL",
+    "BSBM", "INSD", "DRPS",
+]
 
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
+
+def _load_class_names(data_yaml: Path) -> List[str]:
+    """Read class names from data YAML config."""
+    import yaml as _yaml
+    with open(data_yaml, encoding="utf-8") as f:
+        cfg = _yaml.safe_load(f)
+    names = cfg.get("names", [])
+    if isinstance(names, dict):
+        names = [str(names[i]) for i in range(len(names))]
+    if not names:
+        return _FALLBACK_CLASS_NAMES_16
+    return [str(n) for n in names]
+
 
 def _load_yolo_labels(label_dir: Path) -> Dict[str, List[Tuple[int, float, float, float, float]]]:
     """Load YOLO-format ground-truth labels keyed by image stem.
@@ -191,6 +202,7 @@ def collect_hard_negatives(
     device: str = "0",
     imgsz: int = 1280,
     max_fp_per_class: int = 0,
+    split: str = "val",
 ) -> Dict:
     """Run inference and collect false-positive crops.
 
@@ -203,6 +215,7 @@ def collect_hard_negatives(
         device: CUDA device string (e.g. "0", "cpu").
         imgsz: Inference image size.
         max_fp_per_class: If > 0, cap FP crops per class (0 = unlimited).
+        split: Dataset split to run inference on (default: "val").
 
     Returns:
         Summary statistics dict.
@@ -230,24 +243,32 @@ def collect_hard_negatives(
     print(f"  Device       : {device}")
     print()
 
+    print(f"  Split        : {split}")
+    print()
+
     # ── Load model ─────────────────────────────────────────────────────
     print("Loading model...")
     model = YOLO(str(model_weights))
     print(f"  Model loaded: {model_weights}")
 
-    # ── Read data.yaml to find val image/label paths ───────────────────
+    # ── Read data.yaml to find split image/label paths & class names ───
     import yaml as _yaml
     with open(data_yaml, encoding="utf-8") as f:
         ds_cfg = _yaml.safe_load(f)
 
+    # Load class names from data YAML (authoritative for this model)
+    CLASS_NAMES = _load_class_names(data_yaml)
+    NC = len(CLASS_NAMES)
+    print(f"  Classes ({NC}): {CLASS_NAMES}")
+
     ds_path = Path(ds_cfg.get("path", "."))
-    val_img_rel = ds_cfg.get("val", "images/val")
-    val_img_dir = ds_path / val_img_rel
-    if not val_img_dir.is_dir():
+    split_img_rel = ds_cfg.get(split, f"images/{split}")
+    split_img_dir = ds_path / split_img_rel
+    if not split_img_dir.is_dir():
         # Try relative to data_yaml parent
-        val_img_dir = data_yaml.parent / val_img_rel
-    if not val_img_dir.is_dir():
-        print(f"ERROR: Validation image directory not found: {val_img_dir}")
+        split_img_dir = data_yaml.parent / split_img_rel
+    if not split_img_dir.is_dir():
+        print(f"ERROR: {split} image directory not found: {split_img_dir}")
         sys.exit(1)
 
     # Resolve label directory — try multiple common YOLO layouts:
@@ -255,27 +276,27 @@ def collect_hard_negatives(
     #   Layout B (Defect_dataset): images/{split}/  +  labels/{split}/
     #   Layout C (flat):          images/{split}/  +  labels/
     candidates = [
-        val_img_dir.parent / "labels",                                      # A
-        val_img_dir.parent.parent / "labels" / val_img_dir.name,            # B
-        val_img_dir.parent.parent / "labels",                               # C
+        split_img_dir.parent / "labels",                                      # A
+        split_img_dir.parent.parent / "labels" / split_img_dir.name,          # B
+        split_img_dir.parent.parent / "labels",                               # C
     ]
-    val_lbl_dir = None
+    split_lbl_dir = None
     for cand in candidates:
         if cand.is_dir():
-            val_lbl_dir = cand
+            split_lbl_dir = cand
             break
-    if val_lbl_dir is None:
+    if split_lbl_dir is None:
         print(f"WARNING: Label directory not found. Tried: {candidates}. "
               f"Will run inference without GT matching.")
         gt_labels = {}
     else:
-        gt_labels = _load_yolo_labels(val_lbl_dir)
-        print(f"  GT labels loaded: {len(gt_labels)} images from {val_lbl_dir}")
+        gt_labels = _load_yolo_labels(split_lbl_dir)
+        print(f"  GT labels loaded: {len(gt_labels)} images from {split_lbl_dir}")
 
     # ── Run inference ──────────────────────────────────────────────────
-    print(f"\nRunning inference on {val_img_dir}...")
+    print(f"\nRunning inference on {split_img_dir}...")
     results = model.predict(
-        source=str(val_img_dir),
+        source=str(split_img_dir),
         imgsz=imgsz,
         conf=conf_threshold,
         iou=0.45,  # NMS IoU
@@ -447,8 +468,8 @@ Examples:
     )
     parser.add_argument(
         "--data", type=Path,
-        default=Path("data/subway_crops/subway_crops.yaml"),
-        help="Path to dataset YAML config (default: data/subway_crops/subway_crops.yaml)",
+        default=Path("data/train_data_2/data.yaml"),
+        help="Path to dataset YAML config (default: data/train_data_2/data.yaml)",
     )
     parser.add_argument(
         "--output", type=Path, default=DEFAULT_OUTPUT,
@@ -474,6 +495,10 @@ Examples:
         "--max-fp", type=int, default=0,
         help="Max FP crops per class (0 = unlimited, default: 0)",
     )
+    parser.add_argument(
+        "--split", type=str, default="train",
+        help="Dataset split to run on (default: 'train' for hard negative mining)",
+    )
     args = parser.parse_args()
 
     collect_hard_negatives(
@@ -485,6 +510,7 @@ Examples:
         device=args.device,
         imgsz=args.imgsz,
         max_fp_per_class=args.max_fp,
+        split=args.split,
     )
 
 

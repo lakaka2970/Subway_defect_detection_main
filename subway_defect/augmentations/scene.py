@@ -10,16 +10,37 @@ import cv2
 import numpy as np
 
 
-def tunnelize(img: np.ndarray, p_brightness: float = 0.5) -> np.ndarray:
+def _validate_image(img: np.ndarray) -> None:
+    """Validate that *img* is an (H, W, 3) uint8 ndarray.
+
+    Raises:
+        ValueError: If any check fails.
+    """
+    if not isinstance(img, np.ndarray):
+        raise ValueError(
+            f"Expected a numpy ndarray, got {type(img).__name__}"
+        )
+    if img.ndim != 3 or img.shape[2] != 3:
+        raise ValueError(
+            f"Expected an image with shape (H, W, 3), got {img.shape}"
+        )
+    if img.dtype != np.uint8:
+        raise ValueError(
+            f"Expected dtype uint8, got {img.dtype}"
+        )
+
+
+def tunnelize(img: np.ndarray, p_spotlight: float = 0.5) -> np.ndarray:
     """Simulate tunnel lighting: dark, yellow spotlight, sensor noise.
 
     Args:
         img: Input BGR image (H, W, 3) uint8.
-        p_brightness: Probability of adding a warm spotlight.
+        p_spotlight: Probability of adding a warm spotlight.
 
     Returns:
         Augmented image, same shape and dtype.
     """
+    _validate_image(img)
     img = img.copy()
     h, w = img.shape[:2]
 
@@ -28,7 +49,7 @@ def tunnelize(img: np.ndarray, p_brightness: float = 0.5) -> np.ndarray:
     img = (img.astype(np.float32) * brightness).clip(0, 255)
 
     # Warm spotlight from train headlights
-    if np.random.random() < p_brightness:
+    if np.random.random() < p_spotlight:
         cy = np.random.randint(h // 4, 3 * h // 4)
         cx = w // 2
         y, x = np.ogrid[:h, :w]
@@ -56,6 +77,7 @@ def sunlitize(img: np.ndarray, p_shadow: float = 0.4) -> np.ndarray:
     Returns:
         Augmented image, same shape and dtype.
     """
+    _validate_image(img)
     img = img.copy()
     h, w = img.shape[:2]
 
@@ -69,9 +91,10 @@ def sunlitize(img: np.ndarray, p_shadow: float = 0.4) -> np.ndarray:
         n_strips = np.random.randint(1, 5)
         for _ in range(n_strips):
             x0 = np.random.randint(0, w)
-            direction = np.sign(np.random.randn())
+            direction = -1.0 if np.random.random() < 0.5 else 1.0
+            strip_len = max(1, np.random.randint(max(2, w // 6), max(3, w // 2)))
             grad = np.tile(
-                np.linspace(0.4, 1.0, np.random.randint(w // 6, w // 2)),
+                np.linspace(0.4, 1.0, strip_len),
                 (h, 1),
             )
             if direction < 0:
@@ -93,18 +116,18 @@ def motion_blur(img: np.ndarray) -> np.ndarray:
     Returns:
         Motion-blurred image, same shape and dtype.
     """
+    _validate_image(img)
     img = img.copy()
     length = np.random.randint(3, 10)
     angle = np.random.uniform(0, 360)
     cos_a, sin_a = np.cos(np.radians(angle)), np.sin(np.radians(angle))
 
-    size = max(1, length)
-    kernel = np.zeros((size, size), dtype=np.float32)
-    cx = cy = size // 2
+    kernel = np.zeros((length, length), dtype=np.float32)
+    cx = cy = length // 2
     for i in range(length):
         x = int(cx + (i - length / 2) * cos_a)
         y = int(cy + (i - length / 2) * sin_a)
-        if 0 <= x < size and 0 <= y < size:
+        if 0 <= x < length and 0 <= y < length:
             kernel[y, x] = 1.0
 
     kernel /= kernel.sum()
@@ -113,11 +136,13 @@ def motion_blur(img: np.ndarray) -> np.ndarray:
 
 def vibration_blur(img: np.ndarray) -> np.ndarray:
     """Alias for high-frequency vehicle vibration blur."""
+    _validate_image(img)
     return motion_blur(img)
 
 
 def white_balance_shift(img: np.ndarray) -> np.ndarray:
     """Simulate tunnel lighting color-temperature shifts."""
+    _validate_image(img)
     img = img.copy().astype(np.float32)
     gains = np.array([
         np.random.uniform(0.85, 1.15),
@@ -136,13 +161,14 @@ def weather_augment(img: np.ndarray) -> np.ndarray:
     Returns:
         Weather-augmented image, same shape and dtype.
     """
+    _validate_image(img)
     img = img.copy()
     h, w = img.shape[:2]
 
     if np.random.random() < 0.6:
         # Fog: exponential-decay white overlay
         intensity = np.random.uniform(0.15, 0.45)
-        fog_color = np.random.randint(200, 255, 3, dtype=np.uint8)
+        fog_color = np.random.randint(200, 256, 3, dtype=np.uint8)
         fog_color = fog_color.astype(np.float32).reshape(1, 1, 3)
         y, x = np.ogrid[:h, :w]
         cy = np.random.randint(h // 4, 3 * h // 4)
@@ -181,6 +207,7 @@ def glare_augment(img: np.ndarray, p_streak: float = 0.5) -> np.ndarray:
     Returns:
         Glare-augmented image, same shape and dtype.
     """
+    _validate_image(img)
     img = img.copy()
     h, w = img.shape[:2]
     out = img.astype(np.float32)
@@ -188,9 +215,11 @@ def glare_augment(img: np.ndarray, p_streak: float = 0.5) -> np.ndarray:
     # Localized specular highlights (1-4 bright blobs)
     n_blobs = np.random.randint(1, 5)
     for _ in range(n_blobs):
-        cx = np.random.randint(w // 8, 7 * w // 8)
-        cy = np.random.randint(h // 8, 7 * h // 8)
-        radius = np.random.randint(max(8, w // 40), max(16, w // 10))
+        cx = np.random.randint(max(1, w // 8), max(2, 7 * w // 8))
+        cy = np.random.randint(max(1, h // 8), max(2, 7 * h // 8))
+        radius_low = max(8, w // 40)
+        radius_high = max(radius_low + 1, max(16, w // 10))
+        radius = np.random.randint(radius_low, radius_high)
         intensity = np.random.uniform(0.4, 0.9)
 
         y, x = np.ogrid[:h, :w]
@@ -247,6 +276,7 @@ def night_augment(img: np.ndarray, p_ir: float = 0.3) -> np.ndarray:
     Returns:
         Night-augmented image, same shape and dtype.
     """
+    _validate_image(img)
     img = img.copy()
     h, w = img.shape[:2]
 

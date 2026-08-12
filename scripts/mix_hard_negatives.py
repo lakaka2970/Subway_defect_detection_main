@@ -29,8 +29,8 @@ from pathlib import Path
 
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent
 HARD_NEG_DIR = _PROJECT_ROOT / "data" / "hard_negatives"
-TRAIN_IMG_DIR = _PROJECT_ROOT / "data" / "subway_crops" / "train" / "images"
-TRAIN_LBL_DIR = _PROJECT_ROOT / "data" / "subway_crops" / "train" / "labels"
+TRAIN_IMG_DIR = _PROJECT_ROOT / "data" / "train_data_2" / "train" / "images"
+TRAIN_LBL_DIR = _PROJECT_ROOT / "data" / "train_data_2" / "train" / "labels"
 
 # Prefix to identify hard negative files (for --undo)
 HN_PREFIX = "hn_"

@@ -120,7 +120,7 @@ STAGE_DEFS: Dict[str, dict] = {
         "name": "Stage 3: Main Training (1280px, single-phase)",
         "yaml": "stage3_main_training.yaml",
         "output": "weights/stage3_main.pt",
-        "epochs": 45,                  # v2: 45 epochs with patience=15
+        "epochs": 60,                  # v2: 60 epochs with patience=20
         "desc": "[LEGACY] Full unfreeze, 1280px, single-phase training. Prefer 3a->3b.",
         "required": False,             # now optional — 3a/3b is recommended
         "pretrained_from": "2",        # inherit Stage 2 best.pt
@@ -157,12 +157,15 @@ STAGE_DEFS: Dict[str, dict] = {
         "nc_mismatch": False,
     },
     "5": {
-        "name": "Stage 5 (optional): Hard Negative Mining + Calibration",
+        "name": "Stage 5 [ABANDONED]: Hard Negative Mining + Calibration",
         "yaml": "stage5_hard_negative.yaml",
         "output": "weights/stage5_calibrated.pt",
         "epochs": 10,
-        "desc": "Reduce false positives with mined hard negatives, per-class calibration",
+        "desc": "EXPERIMENTAL / ABANDONED 2026-08-12: repeated runs degraded mAP50 "
+                "(-0.010) and P (-0.022); only 375 HN (4.6%) + zero-augment "
+                "distribution shift + constant LR. Do NOT run.",
         "required": False,
+        "enabled": False,
         "pretrained_from": "4",        # inherit Stage 4 best.pt
         "nc_mismatch": False,
     },
@@ -176,7 +179,7 @@ _MODEL_FILES = {
     # === Recommended (three-scale) ===
     "yolo11s-EMA-SimAM": "yolo11s-EMA-SimAM.yaml",
     "yolo11m-EMA-SimAM": "yolo11m-EMA-SimAM.yaml",
-    # === v2: P2 four-scale + CoordAtt + LSK + DCNv4 (upgraded architecture) ===
+    # === v2: P2 four-scale + CoordAtt + LSK + EMA + SimAM (upgraded architecture) ===
     "yolo11s-v2": "yolo11s-v2.yaml",
     "yolo11m-v2": "yolo11m-v2.yaml",
     # === [ABLATION ONLY] P2 four-scale models — see P2 deprecation warning ===
@@ -517,7 +520,7 @@ def _run_stage(
     print()
     print("=" * 70)
     print(f"  {stage['name']}")
-    print(f"  {stage['desc']}")
+    print(f"  {stage.get('desc', '')}")
     print("=" * 70)
     print(f"  Config:   {cfg_path}")
     print(f"  Model:    {model_path}")
@@ -616,7 +619,7 @@ def _run_stage(
             stage_id, lr0, warmup_bias_lr, warmup_epochs,
         )
 
-    logger.info("Starting %s (%d epochs, batch=%d) ...",
+    logger.info("Starting %s (%d epochs, batch=%s) ...",
                 stage["name"], stage["epochs"], batch)
     t0 = time.time()
 
@@ -873,6 +876,11 @@ Examples:
     failed: List[str] = []
 
     for sid in stage_ids:
+        if not STAGE_DEFS[sid].get("enabled", True):
+            print(f"\n  [SKIP] {STAGE_DEFS[sid]['name']} is DISABLED "
+                  f"(set 'enabled: true' in STAGE_DEFS to re-enable).")
+            continue
+
         pretrained, nc_warning = _resolve_pretrained(sid, stages_done)
 
         # ── Stage 4: auto-resolve to 3b when available ──

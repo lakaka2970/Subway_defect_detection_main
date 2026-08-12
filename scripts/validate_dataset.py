@@ -26,6 +26,9 @@ from typing import Dict, List, Optional, Tuple
 
 _CROP_SUFFIX_RE = re.compile(r"_[pn]\d+$")
 _TILE_SUFFIX_RE = re.compile(r"_\d+_\d+$")
+_AUG_SUFFIX_RE = re.compile(r"_aug\d+_\w+$")
+_CP_SUFFIX_RE = re.compile(r"_cp$")
+_SYNTH_SUFFIX_RE = re.compile(r"_synth_\w+$")
 
 # Import class registry for validation bounds
 try:
@@ -39,7 +42,12 @@ MAX_CLASS_ID = TRAIN_NC - 1
 def extract_source_prefix(stem: str) -> str:
     stem = _CROP_SUFFIX_RE.sub("", stem)
     m = _TILE_SUFFIX_RE.search(stem)
-    return stem[: m.start()] if m else stem
+    stem = stem[: m.start()] if m else stem
+    # Strip augmentation / copy-paste / synthetic suffixes
+    stem = _AUG_SUFFIX_RE.sub("", stem)
+    stem = _CP_SUFFIX_RE.sub("", stem)
+    stem = _SYNTH_SUFFIX_RE.sub("", stem)
+    return stem
 
 
 def _split_dirs(root: Path, split: str) -> tuple[Path, Path]:
@@ -137,7 +145,11 @@ def main() -> None:
             errors.append(f"[{split}] labels/ directory missing: {lbl_dir}")
             continue
 
-        imgs = sorted(list(img_dir.glob("*.jpg")) + list(img_dir.glob("*.png")))
+        imgs = sorted(
+            list(img_dir.glob("*.jpg")) + list(img_dir.glob("*.JPG"))
+            + list(img_dir.glob("*.jpeg")) + list(img_dir.glob("*.JPEG"))
+            + list(img_dir.glob("*.png")) + list(img_dir.glob("*.PNG"))
+        )
         lbls = sorted(lbl_dir.glob("*.txt"))
 
         img_stems = {p.stem for p in imgs}
@@ -203,7 +215,11 @@ def main() -> None:
         store: set[str] = set()
         img_dir, _ = _split_dirs(root, split)
         if img_dir.is_dir():
-            for p in list(img_dir.glob("*.jpg")) + list(img_dir.glob("*.png")):
+            for p in (
+                list(img_dir.glob("*.jpg")) + list(img_dir.glob("*.JPG"))
+                + list(img_dir.glob("*.jpeg")) + list(img_dir.glob("*.JPEG"))
+                + list(img_dir.glob("*.png")) + list(img_dir.glob("*.PNG"))
+            ):
                 store.add(p.stem if use_full_stem_for_leakage else extract_source_prefix(p.stem))
         split_sources[split] = store
     for i, left in enumerate(args.splits):

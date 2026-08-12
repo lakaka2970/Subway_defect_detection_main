@@ -9,6 +9,13 @@ v2 improvements:
 - Adaptive scale jitter (±15%) to increase size diversity
 - Color harmonization before pasting to reduce domain gap
 - Class-balanced sampling from defect bank (minority classes oversampled)
+
+v3 fixes (2026-07-27):
+- Fixed hardcoded 1280×1280 resolution in bbox size filtering (now uses
+  actual image dimensions)
+- Replaced global RNG state mutation with isolated Generator instances
+- Added input validation and cv2.imwrite error checking
+- Cleaned up _yolo_to_xyxy API (no longer requires dummy cls_id at [0])
 """
 
 from __future__ import annotations
@@ -16,15 +23,15 @@ from __future__ import annotations
 import random
 import shutil
 from pathlib import Path
-from typing import Dict, List, Tuple
+from typing import Dict, List, Optional, Tuple
 
 import cv2
 import numpy as np
 
 
-def _yolo_to_xyxy(box: List[float], w: int, h: int) -> Tuple[int, int, int, int]:
-    """Convert YOLO normalized [cx, cy, bw, bh] to pixel [x1, y1, x2, y2]."""
-    cx, cy, bw, bh = box[1], box[2], box[3], box[4]
+def _yolo_to_xyxy(cx: float, cy: float, bw: float, bh: float,
+                  w: int, h: int) -> Tuple[int, int, int, int]:
+    """Convert YOLO normalized (cx, cy, bw, bh) to pixel (x1, y1, x2, y2)."""
     x1 = int((cx - bw / 2) * w)
     y1 = int((cy - bh / 2) * h)
     x2 = int((cx + bw / 2) * w)
@@ -32,8 +39,11 @@ def _yolo_to_xyxy(box: List[float], w: int, h: int) -> Tuple[int, int, int, int]
     return max(0, x1), max(0, y1), min(w, x2), min(h, y2)
 
 
-def _xyxy_to_yolo(x1: int, y1: int, x2: int, y2: int, w: int, h: int) -> List[float]:
-    """Convert pixel [x1, y1, x2, y2] to YOLO normalized [cx, cy, bw, bh]."""
+def _xyxy_to_yolo(x1: int, y1: int, x2: int, y2: int,
+                  w: int, h: int) -> List[float]:
+    """Convert pixel (x1, y1, x2, y2) to YOLO normalized [cx, cy, bw, bh]."""
+    if w <= 0 or h <= 0:
+        raise ValueError(f"Invalid image dimensions: w={w}, h={h}")
     cx = ((x1 + x2) / 2) / w
     cy = ((y1 + y2) / 2) / h
     bw = (x2 - x1) / w
@@ -128,13 +138,18 @@ def copy_paste_defects(
 
     Returns stats dict with counts.
     """
-    random.seed(seed)
-    np.random.seed(seed)
+    rng = random.Random(seed)
+    np_rng = np.random.default_rng(seed)
 
     img_dir = Path(img_dir)
     label_dir = Path(label_dir)
     output_img_dir = Path(output_img_dir)
     output_label_dir = Path(output_label_dir)
+
+    if not img_dir.is_dir():
+        raise FileNotFoundError(f"Image directory not found: {img_dir}")
+    if not label_dir.is_dir():
+        raise FileNotFoundError(f"Label directory not found: {label_dir}")
 
     # Collect all labelled images with small defects
     defect_bank: List[Tuple[np.ndarray, int, int, int]] = []  # (patch, cls_id, pw, ph)
@@ -152,28 +167,28 @@ def copy_paste_defects(
         if not lines:
             continue
 
-        img = None
+        img: Optional[np.ndarray] = None
         for line in lines:
             parts = line.split()
             if len(parts) < 5:
                 continue
             cls_id = int(parts[0])
-            # Estimate pixel size (assume 1280x1280 or read actual)
-            bw_norm, bh_norm = float(parts[3]), float(parts[4])
-            # Use 1280 as reference (subway_crops are 1280x1280)
-            bw_px = bw_norm * 1280
-            bh_px = bh_norm * 1280
-            side = max(bw_px, bh_px)
-            if side < min_bbox_size or side > max_bbox_size:
-                continue
+            cx, cy, bw_norm, bh_norm = float(parts[1]), float(parts[2]), float(parts[3]), float(parts[4])
 
+            # Load image to get actual dimensions for size filtering
             if img is None:
                 img = cv2.imread(str(img_path))
                 if img is None:
                     break
 
             h_img, w_img = img.shape[:2]
-            x1, y1, x2, y2 = _yolo_to_xyxy([cls_id] + [float(x) for x in parts[1:5]], w_img, h_img)
+            bw_px = bw_norm * w_img
+            bh_px = bh_norm * h_img
+            side = max(bw_px, bh_px)
+            if side < min_bbox_size or side > max_bbox_size:
+                continue
+
+            x1, y1, x2, y2 = _yolo_to_xyxy(cx, cy, bw_norm, bh_norm, w_img, h_img)
             if x2 - x1 < 4 or y2 - y1 < 4:
                 continue
             patch = img[y1:y2, x1:x2].copy()
@@ -219,7 +234,7 @@ def copy_paste_defects(
             existing_lines = [l.strip() for l in lbl_path.read_text(encoding="utf-8").splitlines() if l.strip()]
 
         # Decide whether to paste onto this image
-        if random.random() > paste_prob:
+        if rng.random() > paste_prob:
             # Just copy original
             shutil.copy2(img_path, output_img_dir / img_path.name)
             if lbl_path.exists():
@@ -243,22 +258,25 @@ def copy_paste_defects(
         for line in existing_lines:
             parts = line.split()
             if len(parts) >= 5:
-                cls_id = int(parts[0])
-                box = _yolo_to_xyxy([cls_id] + [float(x) for x in parts[1:5]], w_img, h_img)
+                box = _yolo_to_xyxy(
+                    float(parts[1]), float(parts[2]),
+                    float(parts[3]), float(parts[4]),
+                    w_img, h_img,
+                )
                 existing_boxes.append(box)
 
         # Paste defects
-        n_pastes = random.randint(1, max_pastes)
+        n_pastes = rng.randint(1, max_pastes)
         new_lines: List[str] = []
         pasted_this_img = 0
 
         for _ in range(n_pastes):
             # Class-balanced sampling from defect bank
-            idx_choice = random.choices(range(len(defect_bank)), weights=bank_weights, k=1)[0]
+            idx_choice = rng.choices(range(len(defect_bank)), weights=bank_weights, k=1)[0]
             patch, cls_id, pw, ph = defect_bank[idx_choice]
 
             # Adaptive scale jitter (±15%) for size diversity
-            scale = random.uniform(0.85, 1.15)
+            scale = rng.uniform(0.85, 1.15)
             new_pw = max(4, int(pw * scale))
             new_ph = max(4, int(ph * scale))
             if new_pw != pw or new_ph != ph:
@@ -270,8 +288,10 @@ def copy_paste_defects(
             placed = False
             while attempts < 20 and not placed:
                 attempts += 1
-                px = random.randint(edge_margin, max(edge_margin, w_img - pw - edge_margin))
-                py = random.randint(edge_margin, max(edge_margin, h_img - ph - edge_margin))
+                x_hi = max(edge_margin + 1, w_img - pw - edge_margin)
+                y_hi = max(edge_margin + 1, h_img - ph - edge_margin)
+                px = rng.randint(edge_margin, x_hi)
+                py = rng.randint(edge_margin, y_hi)
                 paste_box = (px, py, px + pw, py + ph)
 
                 # Check IoU with existing + already pasted boxes
@@ -308,7 +328,10 @@ def copy_paste_defects(
             total_pastes += pasted_this_img
             # Save augmented image with _cp suffix
             out_name = img_path.stem + "_cp" + img_path.suffix
-            cv2.imwrite(str(output_img_dir / out_name), img)
+            out_path = output_img_dir / out_name
+            if not cv2.imwrite(str(out_path), img):
+                print(f"    WARNING: Failed to write {out_path}")
+                continue
             all_lines = existing_lines + new_lines
             (output_label_dir / (img_path.stem + "_cp.txt")).write_text(
                 "\n".join(all_lines) + "\n", encoding="utf-8"

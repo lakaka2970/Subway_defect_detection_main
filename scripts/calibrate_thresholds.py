@@ -54,7 +54,15 @@ def resolve_split_path(data_yaml: Path, split: str) -> Path:
     data = yaml.safe_load(data_yaml.read_text(encoding="utf-8"))
     root = Path(data.get("path", data_yaml.parent))
     if not root.is_absolute():
-        root = (data_yaml.parent / root).resolve()
+        # YOLO convention: "path" is relative to the YAML file location.
+        # But some configs place the YAML *inside* the dataset dir with "path"
+        # naming that same dir → resolve relative to project root instead.
+        candidate = (data_yaml.parent / root).resolve()
+        if candidate.is_dir():
+            root = candidate
+        else:
+            # Fallback: YAML is inside the dataset dir, use YAML parent
+            root = data_yaml.parent.resolve()
     split_value = data.get(split) or data.get("val")
     if split_value is None:
         raise ValueError(f"{data_yaml} does not define '{split}' or 'val'")

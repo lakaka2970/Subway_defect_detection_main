@@ -21,13 +21,20 @@ Usage::
     # Filter a list of detection dicts (from nms_merge_detections)
     kept, rejected = cascade.filter_detections(image_bgr, detections)
 
-Class-to-weight mapping (12-class dataset indexing)::
+Class-to-weight mapping (16-class dataset indexing)::
 
+    VHBNM  (cls 0) → classifier_vhb_level1.pt   (hierarchical L1 → L2)
+    VHBNL  (cls 1) → classifier_vhb_level1.pt   (hierarchical L1 → L2)
     SVHBNM (cls 2) → classifier_svhbnm.pt
     SVHBNL (cls 3) → classifier_svhbnl.pt
     SVHTNL (cls 4) → classifier_svhtnl.pt
     CBHPM  (cls 5) → classifier_cbhpm.pt
     CBVPM  (cls 6) → classifier_cbvpm.pt
+    GWCNM  (cls 11) → classifier_gwcnm.pt
+    GWCNL  (cls 12) → classifier_gwcnl.pt
+    BSBM   (cls 13) → classifier_bsbm.pt
+    INSD   (cls 14) → classifier_insd.pt
+    DRPS   (cls 15) → classifier_drps.pt
 """
 
 from __future__ import annotations
@@ -41,7 +48,7 @@ import numpy as np
 
 logger = logging.getLogger(__name__)
 
-# ── Default class → weight filename mapping (12-class dataset indexing) ──
+# ── Default class → weight filename mapping (16-class dataset indexing) ──
 DEFAULT_CLASSIFIER_MAP: Dict[int, str] = {
     0: "classifier_vhb_level1.pt",    # VHBNM → hierarchical L1 (normal vs defective)
     1: "classifier_vhb_level1.pt",    # VHBNL → hierarchical L1 (shared)
@@ -50,11 +57,15 @@ DEFAULT_CLASSIFIER_MAP: Dict[int, str] = {
     4: "classifier_svhtnl.pt",        # SVHTNL
     5: "classifier_cbhpm.pt",         # CBHPM
     6: "classifier_cbvpm.pt",         # CBVPM
-    # 7: RHTBNM — pending data collection
-    # 8: RHTBNL — pending data collection
-    # 9: BSBM — pending data collection
-    10: "classifier_insd.pt",         # INSD (high FP class, needs FP reduction)
-    # 11: DRPS — already excellent, no classifier needed
+    # 7: RHTBNM — excluded this round (pending data collection)
+    # 8: RHTBNL — excluded this round (pending data collection)
+    # 9: GWCSBNM — excluded this round (pending data collection)
+    # 10: GWCSBNL — excluded this round (pending data collection)
+    11: "classifier_gwcnm.pt",        # GWCNM — P=0.727, high FP (weight TBD)
+    12: "classifier_gwcnl.pt",        # GWCNL — defensive (weight TBD)
+    13: "classifier_bsbm.pt",         # BSBM — defensive (weight TBD)
+    14: "classifier_insd.pt",         # INSD (high FP class, needs FP reduction)
+    15: "classifier_drps.pt",         # DRPS — mAP50-95 low (weight TBD)
 }
 
 # Hierarchical classifier config: classes that use L1 → L2 two-stage verification

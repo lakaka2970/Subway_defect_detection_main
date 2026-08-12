@@ -449,12 +449,65 @@ WBFFusion(
 
 | 函数 | 操作 | 概率 |
 |------|------|------|
-| `tunnelize(img, p_brightness=0.5)` | 暗化 ×0.3-0.6 + 暖色聚光灯 + 高斯噪声 σ=3-10 | 训练期 0.3 |
+| `tunnelize(img, p_spotlight=0.5)` | 暗化 ×0.3-0.6 + 暖色聚光灯 + 高斯噪声 σ=3-10 | 训练期 0.3 |
 | `sunlitize(img, p_shadow=0.4)` | 增亮 ×1.2-1.7 + 1-4 条渐变阴影 | 训练期 0.3 |
 | `motion_blur(img)` | 线性运动模糊，核长 3-9，角度 0-360° | 训练期 0.15 |
+| `vibration_blur(img)` | `motion_blur` 别名（车辆高频振动） | 同上 |
 | `weather_augment(img)` | 60% 雾（指数衰减白色叠加）+ 40% 雨（15-60 条短线） | 训练期 0.1 |
+| `white_balance_shift(img)` | 逐通道增益抖动 B∈[0.85,1.15] G∈[0.90,1.10] R∈[0.85,1.20] | 训练期 0.12 |
+| `glare_augment(img, p_streak=0.5)` | 1-4 个镜面高光斑 + 方向性光条纹 | 训练期 0.12 |
+| `night_augment(img, p_ir=0.3)` | 30% IR 模拟 / 70% 可见光低照度 + 暗角 | 训练期 0.12 |
 
-**验证要求**: 所有增强保持输入形状和 uint8 dtype，非原地操作
+**验证要求**: 所有增强保持输入形状和 uint8 dtype，非原地操作，支持最小 4×4 输入
+
+### 5.6b 背景替换增强
+
+**文件**: `subway_defect/augmentations/background_replacement.py`
+**类名**: `BackgroundReplacer`
+
+```python
+BackgroundReplacer(
+    background_dir: Path,       # 背景图片池目录（递归扫描子目录）
+    fg_padding: int = 15,       # GrabCut 矩形扩展像素
+    grabcut_iters: int = 5,     # GrabCut 迭代次数
+    poisson_blend: bool = True, # Poisson 无缝融合（失败回退 alpha）
+    alpha: float = 0.9,
+    bg_resize: int = 1024,
+    grabcut_max_side: int = 1024,   # GrabCut 降尺度工作边长（8K 大图必需）
+    max_poisson_pixels: int = 4_000_000,  # 超过则直接羽化 alpha 融合
+    seed: int = 42,
+)
+```
+
+使用 GrabCut（ML 图割分割）提取缺陷前景掩码，通过 Poisson 无缝融合将前景合成到不同背景上。用于打破车间拍摄的背景-标签伪相关。
+
+**大图性能**: GrabCut 在 ≤1024 px 工作尺度运行后掩码上采样回全分辨率；超过 `max_poisson_pixels` 的图像跳过 Poisson 求解器，改用随图像尺寸自适应的羽化 alpha 融合。`random_background()` 线程安全（RNG 加锁），可供线程池批处理调用。
+
+### 5.6c GridMask 遮挡增强
+
+**文件**: `subway_defect/augmentations/grid_mask.py`
+
+```python
+grid_mask(img, d_range=(64, 128), ratio=0.6, mode=0, prob=0.5)
+GridMaskTransform(d_range, ratio, mode, prob)  # Ultralytics 兼容包装
+```
+
+基于 Chen et al. 2020 (arXiv:2001.04086) 的规则网格遮挡，迫使模型不依赖单一空间区域。`mode=0` 零填充，`mode=1` 随机噪声填充。
+
+### 5.6d 成像链路退化增强
+
+**文件**: `subway_defect/augmentations/degradation.py`
+
+| 函数 | 操作 | 用途 |
+|------|------|------|
+| `resolution_degrade(img, down_factor=None)` | 降采样 ×2.0-4.0（INTER_AREA）再还原（INTER_LINEAR） | 减少缺陷目标有效像素量，模拟远距离小目标 |
+| `defocus_blur(img, sigma=None)` | 高斯模糊 σ=1.5-4.0 | 镜头失焦 |
+| `jpeg_compress(img, quality=None)` | JPEG 重编码 q=35-75 | 传输/归档压缩伪影 |
+| `background_blur(img, boxes, sigma=None, pad_frac=0.15)` | 框外区域强模糊（σ=4-8）+ 羽化过渡，框内保持清晰 | 景深模拟；返回 `(img, boxes)`，标签不变 |
+
+**验证要求**: 与 5.6 相同（形状/dtype 保持、非原地、小图安全）；带框函数不修改标签。
+
+**离线扩充管线**: `scripts/expand_defect_dataset.py` 将 `data/Defect_dataset_2/Defect_dataset` 按 source group（同秒连拍归组）零泄漏拆分为 train/val/test，仅对 train 原图按类别感知预算生成 5.6/5.6b/5.6d 组合变体，输出自包含数据集 + `manifest.json`（含拆分、预算、逐类统计与排除清单）。
 
 ### 5.7 ContactNetCopyPaste
 
@@ -764,12 +817,12 @@ L_total = 1.5 × WIoU(box) + 0.5 × FocalLoss(cls, α=0.25, γ=2.0) + 1.5 × DFL
 | Epochs | 200 |
 | 图像尺寸 | 1024 |
 | Batch size | 16 |
-| 优化器 | AdamW |
-| 学习率 | 0.001 → 0.00001（Cosine） |
-| Mosaic | 0.8 → 0.1（epoch 200 时关闭） |
-| MixUp | 0.15 |
-| CopyPaste | 0.6 (mode="flip") |
-| 场景增强 | tunnel 0.3, sunlight 0.3, weather 0.1, motion_blur 0.15 |
+| 优化器 | SGD（与 C1 同族，避免优化器重置） |
+| 学习率 | 0.001（Cosine 衰减） |
+| Mosaic | 0.5（小数据集降低畸变），close_mosaic=190 |
+| MixUp | 0（关闭，让模型先学真实分布） |
+| CopyPaste | 0.3 (mode="flip") |
+| 场景增强 | 离线预生成：vibration 20%, tunnel 20%, sunlit 12%, white_bal 12%, glare 12%, night 12%, blur 6%, weather 6% |
 
 ### 9.4 Stage C3: 缺陷检测微调
 
@@ -778,7 +831,7 @@ L_total = 1.5 × WIoU(box) + 0.5 × FocalLoss(cls, α=0.25, γ=2.0) + 1.5 × DFL
 | Epochs | 50 |
 | 图像尺寸 | 1024 |
 | Batch size | 8 |
-| 优化器 | AdamW |
+| 优化器 | SGD（与 C2 一致） |
 | 学习率 | 0.0001（恒定） |
 | Mosaic/MixUp | 0（关闭） |
 | CopyPaste | 0.4 |
@@ -787,10 +840,12 @@ L_total = 1.5 × WIoU(box) + 0.5 × FocalLoss(cls, α=0.25, γ=2.0) + 1.5 × DFL
 ### 9.5 数据增强体系
 
 ```
-第四层: 合成生成 — Inpainting 缺失合成 + CG 渲染罕见缺陷  (离线, 50-80 张/类)
-第三层: 混合增强 — CopyPaste + Mosaic9                    (在线, 中后期)
-第二层: 定制增强 — 隧道/烈日/运动模糊/雨雾                 (在线, 全程)
+第五层: 背景替换 — GrabCut 分割 + Poisson 融合             (离线, 按需)
+第四层: 合成生成 — Inpainting 缺失合成                     (离线, 50-80 张/类)
+第三层: 混合增强 — CopyPaste + Mosaic                      (在线, 中后期)
+第二层: 定制增强 — 隧道/烈日/运动模糊/雨雾/反光/夜景       (离线预生成, 每张×3 变体)
 第一层: 基础扩增 — 翻转/缩放/HSV 偏移                     (在线, 全程)
+遮挡层: GridMask — 规则网格遮挡                            (在线, 可选)
 ```
 
 **重要约束**: `flipud=0.0`（接触网有固定上下方向，禁止垂直翻转）

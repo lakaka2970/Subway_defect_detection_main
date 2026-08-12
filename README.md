@@ -13,20 +13,19 @@
 | 架构 | **YOLO11s-EMA-SimAM** |
 | 参数量 | 9.58M |
 | GFLOPs | 23.3 |
-| 检测类别 | **7 类**（VHBNM, VHBNL, SVHBNM, SVHBNL, SVHTNL, CBHPM, CBVPM） |
-| 推荐权重 | `weights/stage4_best_finetune.pt`（mAP50=0.622） |
+| 检测类别 | **16 类**（完整 taxonomy，实际 12 类有有效监督） |
+| 推荐权重 | `output/7.30 训练结果_stage5_hnm/stage_5/weights/best.pt` |
 | 代码分支 | `upgrade/7.25` |
 
-### 性能指标（val 集 2,869 张）
+### 性能指标（8.9 训练结果，calibration 集）
 
-| 指标 | S4 权重 | 验收线 |
+| 指标 | Stage 4 | 验收线 |
 |------|:------:|:-----:|
-| mAP50 | **0.622** | — |
-| mAP50-95 | **0.494** | — |
-| Precision | 0.550 | ≥0.90 |
-| Recall | 0.599 | ≥0.90 |
-| CBHPM 级联 Precision | **0.959** | ≥0.90 ✅ |
-| 推理速度 | ~13ms/tile | ≤10s/图 ✅ |
+| mAP50 | **0.7525** | — |
+| mAP50-95 | **0.4231** | — |
+| Precision (人工复核线) | 0.4585 | ≥0.90 |
+| Recall (人工复核线) | 0.8080 | ≥0.90 |
+| 双 0.90 通过类 | 1/16 (SVHTNL) | 16/16 |
 
 ### 级联分类器（全部 6 个已训练）
 
@@ -39,17 +38,19 @@
 | SVHBNM | normal/missing | **0.835** | `weights/classifier_svhbnm.pt` |
 | VHBNM/VHBNL | 4-class | 0.499 | `weights/classifier_vhbnm_vhbnl.pt`（实验性） |
 
-### 训练数据集（7.25 重建版）
+### 训练数据集（8.10 扩充版）
 
-| 指标 | 值 |
-|------|:--:|
-| 总图片数 | **~48,000+** |
-| 正样本 | ~28,755（~60%） |
-| 负样本 | ~19,000（~40%） |
-| 总标注框 | 48,647 |
-| 场景增强 | v3（含反光眩光 + 夜晚暗光/IR） |
-| Copy-Paste | v2（Poisson 融合 + 色彩协调 + 类别均衡） |
-| A2 审计数据 | 363 张（HN + FN + 修订 + 误报 + 空标签） |
+| 指标 | train | val | test | 合计 |
+|------|:-----:|:---:|:----:|:----:|
+| 图像数 | **7,781** | 551 | 551 | **8,883** |
+| 标注框数 | 7,896 | 561 | 586 | **9,043** |
+| 数据来源 | `data/train_data_2/` | 原图 | 原图 | — |
+
+**增强手段覆盖**：震动模糊、反光、暗光、隧道照明、降分辨率、背景模糊、失焦、JPEG 压缩、背景替换、白平衡、雨雾、强光（12 类离线变体）。
+
+**类别分布**：VHBNM(340)、VHBNL(1660)、SVHBNM(664)、SVHBNL(771)、SVHTNL(708)、CBHPM(370)、CBVPM(555)、GWCNM(486)、GWCNL(782)、BSBM(486)、INSD(504)、DRPS(350)。RHTBNM/RHTBNL/GWCSBNM/GWCSBNL 为零样本类（需新采集）。
+
+> 数据集构建流程见下方「数据集扩充管线」章节。
 
 ### 五阶段训练流程
 
@@ -63,7 +64,7 @@ Stage 1A (Head预热) → 1B (Backbone适应) → 2 (域适应) → 3 (主训练
 
 ## 项目概述
 
-本系统通过车载高速相机采集的接触网图像，自动识别螺栓松动/脱落、开口销缺失、绝缘子破损等 18 类缺陷，替代人工巡检。系统支持**车载端**（单 RTX 4090，离线运行）和**地面端**（双 RTX 4090，WBF 融合）两种部署形态。
+本系统通过车载高速相机采集的接触网图像，自动识别螺栓松动/脱落、开口销缺失、绝缘子破损等 16 类缺陷，替代人工巡检。系统支持**车载端**（单 RTX 4090，离线运行）和**地面端**（双 RTX 4090，WBF 融合）两种部署形态。
 
 ### 核心指标
 
@@ -270,40 +271,41 @@ COCO 2017 (118K 图像, 80 类)                   自制数据集 (~1880 张, 7 
 
 ---
 
-### Phase 1: 数据集准备
+### Phase 1: 数据集扩充管线
 
-训练前必须完成数据集构建。项目提供了 `tool/` 目录下的一键准备脚本：
+当前使用 `data/train_data_2/` 作为训练数据集（8.10 扩充版），由 `scripts/expand_defect_dataset.py` 从 `data/Defect_dataset_2/Defect_dataset` 生成：
 
 ```bash
-# 一键执行：classes.txt 修复 → YAML 生成 → train/val 划分 → 场景增强 → 合成缺陷
-python tool/prepare_dataset.py
+# 规划模式（查看类别预算与存储估算）
+python scripts/expand_defect_dataset.py --dry-run
 
-# 校验数据集完整性
-python tool/validate_dataset.py
+# 小规模验证（前 24 个 source group）
+python scripts/expand_defect_dataset.py --limit-groups 24 --output data/train_data_2_validation
+
+# 全量生成（约 2 小时，4 workers）
+python scripts/expand_defect_dataset.py --workers 4
 ```
 
-**各步骤说明**：
+**管线特性**：
 
-| 步骤 | 脚本 | 产出 |
-|------|------|------|
-| ① 修复 classes.txt | `fix_classes_txt.py` | 7 类，无空行 |
-| ② 生成 YAML 配置 | `create_defect_data_yaml.py` | `data/Defect_dataset/defect_data.yaml`（channels: 3, 兼容 COCO 预训练权重） |
-| ③ train/val 划分 | `split_dataset.py` | ~400 train + ~100 val，按源图分组防泄露 |
-| ④ 场景增强 | `generate_scene_augmentations.py` | ~1200 张增强变体（隧道/日照/模糊/天气） |
-| ⑤ 合成缺陷 | `generate_synthetic_defects.py` | ~280 张 inpainting 合成缺失样本 |
+| 特性 | 说明 |
+|------|------|
+| Source-group 零泄漏 | 同秒连拍 (`IMG_YYYYMMDD_HHMMSS[_N]`) 归组，train/val/test 交集为 0 |
+| 类别感知预算 | 稀有类 (VHBNM/CBHPM) ×4 变体，FP 驱动类 (DRPS) ×1 变体 |
+| 12 类离线增强 | 震动、反光、暗光、隧道、降分辨率、背景模糊、失焦、JPEG、背景替换、白平衡、雨雾、强光 |
+| 变体仅入 train | val/test 保持原图纯净，评估不受近重复样本污染 |
+| 自包含输出 | `data/train_data_2/{train,val,test}/{images,labels}/` + `classes.txt` + `manifest.json` |
 
-**预期产出**：
+**预期产出**（8.10 版）：
 
-| 指标 | 值 |
-|------|-----|
-| 训练集 | ~1880 张（399 原始 + ~1200 增强 + ~280 合成） |
-| 验证集 | ~101 张（原始，无增强） |
-| 类别数 | 7 类（VHBNM, VHBNL, SVHBNM, SVHBNL, SVHTNL, CBHPM, CBVPM） |
-| 图像尺寸 | 5120 × 5120（训练时 resize 至 1024） |
+| 指标 | train | val | test | 合计 |
+|------|:-----:|:---:|:----:|:----:|
+| 图像数 | 7,781 | 551 | 551 | 8,883 |
+| 标注框数 | 7,896 | 561 | 586 | 9,043 |
 
-> **注意**：当前数据集仅覆盖 7 类缺陷，模型 YAML 中 `nc: 18` 为完整缺陷分类体系的占位值。训练时 dataset YAML 会自动将模型 `nc` 覆盖为实际类别数。新增标注数据后，只需更新 dataset YAML 的 `names` 列表即可扩展类别。
+> **零样本类**：RHTBNM/RHTBNL/GWCSBNM/GWCSBNL 无有效图像（孤立标签），需新采集后重新运行管线。
 
-**✅ 验证通过标准**：运行 `python tool/validate_dataset.py` 输出 `[PASS] VALIDATION PASSED`。
+**✅ 验证通过标准**：运行 `python scripts/expand_defect_dataset.py --dry-run` 输出逐类统计，无 ERROR。
 
 ---
 
@@ -488,8 +490,8 @@ train-defect \
 
 | # | 阶段 | 操作 | 预期结果 | 实际结果 | ✅ |
 |---|------|------|---------|---------|---|
-| 1 | 数据准备 | `python tool/prepare_dataset.py` | ~1880 train + ~100 val | | |
-| 2 | 数据校验 | `python tool/validate_dataset.py` | `[PASS]` | | |
+| 1 | 数据扩充 | `python scripts/expand_defect_dataset.py --workers 4` | 7,781 train + 551 val + 551 test | | |
+| 2 | 数据校验 | 检查 `data/train_data_2/manifest.json` | 无 ERROR，逐类统计合理 | | |
 | 3 | COCO 权重 | `python -c "from subway_yolo import YOLO; YOLO('yolo11s.pt')"` | 无报错 | | |
 | 4 | C1 预热 | `train-defect ... --coco_pretrain --skip_full --skip_finetune` | mAP50 > 0.30, Box Loss < 1.5<br>输出: `output/..._c1_warmup/` | | |
 | 5 | C2 主训练 | `train-defect ... --pretrained <c1_best> --skip_warmup --skip_finetune` | mAP50 > 0.70, P/R > 0.85<br>输出: `output/..._c2_full/` | | |
