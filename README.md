@@ -4,41 +4,44 @@
 
 > 完整规格说明见 [SPECIFICATION.md](SPECIFICATION.md)
 
-## 当前模型状态（2026-07-25 更新）
+## 当前模型状态（2026-08-14 更新）
 
 ### 检测模型
 
 | 属性 | 值 |
 |------|:--:|
-| 架构 | **YOLO11s-EMA-SimAM** |
-| 参数量 | 9.58M |
-| GFLOPs | 23.3 |
+| 架构 | **YOLO11s-v2**（P2 四尺度检测头 + CoordAtt + LSK + EMA + SimAM + 辅助部件分类头） |
+| 参数量 | 9.98M（249 layers） |
+| GFLOPs | 33.3 |
 | 检测类别 | **16 类**（完整 taxonomy，实际 12 类有有效监督） |
-| 推荐权重 | `output/7.30 训练结果_stage5_hnm/stage_5/weights/best.pt` |
+| 推荐权重 | `output/8.12训练结果/stage_4/weights/best.pt` |
 | 代码分支 | `upgrade/7.25` |
 
-### 性能指标（8.9 训练结果，calibration 集）
+> v2 相对 v1（yolo11s-EMA-SimAM）的改进：P2 检测分支提升微小目标召回、P4 CoordAtt 方向敏感注意力（针对"松动"类）、Backbone P3 LSK 自适应感受野、保留 EMA/SimAM；另在 backbone P3 后挂载 9 类部件类型辅助分类头（aux_head, loss_weight=0.1）。损失函数采用 Wise-IoU + Focal Loss。
 
-| 指标 | Stage 4 | 验收线 |
-|------|:------:|:-----:|
-| mAP50 | **0.7525** | — |
-| mAP50-95 | **0.4231** | — |
-| Precision (人工复核线) | 0.4585 | ≥0.90 |
-| Recall (人工复核线) | 0.8080 | ≥0.90 |
-| 双 0.90 通过类 | 1/16 (SVHTNL) | 16/16 |
+### 性能指标（8.12 训练结果，train_data_2 val 集）
 
-### 级联分类器（全部 6 个已训练）
+| 指标 | Stage 4 Best | 验收线 | 达成 |
+|------|:------:|:-----:|:----:|
+| mAP50 | **0.961** | — | — |
+| mAP50-95 | **0.763** | — | — |
+| Precision | **0.917** | ≥0.90 | ✅ |
+| Recall | **0.919** | ≥0.90 | ✅ |
+| 双 0.90 通过类 | **8/12**（有样本类） | 12/12 | VHBNL 最短板（R=0.506） |
 
-| 分类器 | 任务 | macro-F1 | 权重 |
-|--------|------|:--------:|------|
-| CBHPM | normal/missing | **0.956** | `weights/classifier_cbhpm.pt` |
-| SVHBNL | normal/loose | **0.868** | `weights/classifier_svhbnl.pt` |
-| CBVPM | normal/missing | **0.859** | `weights/classifier_cbvpm.pt` |
-| SVHTNL | normal/loose | **0.839** | `weights/classifier_svhtnl.pt` |
-| SVHBNM | normal/missing | **0.835** | `weights/classifier_svhbnm.pt` |
-| VHBNM/VHBNL | 4-class | 0.499 | `weights/classifier_vhbnm_vhbnl.pt`（实验性） |
+🎉 **首次实现 Precision / Recall 双双超过 90% 验收线**，且所有指标全面超越历史最佳（7.30 的 mAP50 0.513 → 0.961）。逐类表现：VHBNM/SVHBNM/SVHTNL/CBHPM/CBVPM/GWCNL/BSBM/INSD 等 8 类双达标；CBHPM/CBVPM（销钉缺口）与 DRPS（吊弦不受力定位精度）为后续重点改进方向。
 
-### 训练数据集（8.10 扩充版）
+> 详细评估报告见 `docs/plans/2026-08-12训练报告（7.25分支）.md`
+
+### 级联分类器（假阳性二次校验）
+
+`subway_defect/pipeline/cascade.py` 已适配 16 类索引映射：对每个候选框裁剪 1.75× 上下文区域，经逐类二分类 MobileNetV3-small 分类器复判，「normal」置信度超阈值即拒绝该检测为假阳性。VHB 类采用分层 L1→L2 结构，零样本类（RHTBNM/RHTBNL/GWCSBNM/GWCSBNL）排除在外；分类器权重文件不随仓库分发。
+
+> 参考（7.30 七类时代 PoC macro-F1）：CBHPM 0.956 / SVHBNL 0.868 / CBVPM 0.859 / SVHTNL 0.839 / SVHBNM 0.835。
+
+### 训练数据集
+
+**基线：`data/train_data_2/`（8.10 扩充版）** —— 当前最佳模型（8.12）所用数据集：
 
 | 指标 | train | val | test | 合计 |
 |------|:-----:|:---:|:----:|:----:|
@@ -52,15 +55,21 @@
 
 > 数据集构建流程见下方「数据集扩充管线」章节。
 
-### 五阶段训练流程
+⚠️ **train_data_3 实验（8.13）已回退**：合并 `Defect_dataset` 补充源并引入 CLAHE/elastic/defect glare+shadow 新增强后重训，mAP50 由 0.961 回落至 0.901（CBHPM 召回崩盘至 0.347）。根因为新增数据源标注口径不一致 + elastic/defect_shadow 破坏销钉缺口等细微特征信号，本轮权重未采纳，基线仍为 train_data_2（详见 `docs/plans/2026-08-14_train_data3_训练报告.md`）。
+
+### 训练管道（简化两阶段）
 
 ```
-Stage 1A (Head预热) → 1B (Backbone适应) → 2 (域适应) → 3 (主训练) → 4 (微调) → 5 (难负样本)
-   公开数据集            公开数据集          subway_crops    subway_crops    subway_crops    subway_crops+HN
-   40ep/1024px          60ep/1024px        40ep/1024px    80ep/1280px    10ep/1280px    10ep/1280px
+Stage 3 (主训练) ──────→ Stage 4 (微调)
+ 60ep / 1280px            15ep / 1280px
+ batch=16 全解冻           冻结 backbone [0-9]
+ WIoU + AdamW lr=2e-4     AdamW lr=5e-5
+ class_weights 强增强      极轻增强
+ init: COCO               init: S3 best.pt
 ```
 
-> 详细评估报告见 `docs/2026-07-25模型评估报告.md`
+- **Stage 5（难负样本挖掘）已弃用**：多次实验均导致退化（mAP50 −0.010 / P −0.022），已在 `scripts/train_pipeline.py` 中标记 ABANDONED 并默认禁用。
+- 提升 Precision 的替代方案：级联分类器过滤 FP / 逐类阈值校准（`output/8.12训练结果/calibrated_thresholds_v3/`）/ 地面端 WBF 融合。
 
 ## 项目概述
 
@@ -190,8 +199,8 @@ pytest tests/ --slow -v
            ▼
 ┌─────────────────────┐
 │ Stage 2: 缺陷检测    │  ← 仅对 ROI 区域做 1024 切片
-│ YOLO11s/m-EMA-SimAM │     切片数: 60~90（降低 50-67%）
-│ 18 类缺陷            │     耗时: ~2s
+│ YOLO11s-v2          │     切片数: 60~90（降低 50-67%）
+│ 16 类缺陷            │     耗时: ~2s
 └──────────┬──────────┘
            │
            ▼
@@ -202,16 +211,21 @@ pytest tests/ --slow -v
 总耗时: 27ms + 500ms + 2000ms + 200ms + 2500ms(解码) ≈ 5.2s
 ```
 
-### 模型注意力改造
+### 模型注意力改造（v2）
 
 | 位置 | 模块 | 参数量 | 延迟 | 论文 |
 | --- | --- | --- | --- | --- |
+| P2 检测分支（v2 新增四尺度） | **SimAM** | **0** | +0.1ms | ICML 2021 |
 | P3 检测分支 | **EMA** | ~200 | +0.4ms | ICASSP 2023 |
-| P4/P5 检测分支 | **SimAM** | **0** | +0.1ms | ICML 2021 |
+| P4 检测分支 | **CoordAtt** | ~低 | 极低 | CVPR 2021 |
+| P5 检测分支 | **SimAM** | **0** | +0.1ms | ICML 2021 |
+| Backbone P3 后 | **LSK**（大选择核） | ~低 | 极低 | ICCV 2023 |
 | Backbone 末端 | C2PSA（保留） | — | — | YOLO11 原生 |
 
 - **EMA（Efficient Multi-Scale Attention）**：X/Y 双方向池化，保留空间位置信息，增强对小目标（螺栓、开口销 ~8×8 px）的定位能力
 - **SimAM（Simple Parameter-Free Attention）**：基于神经科学空间抑制理论，零参数 → 零过拟合风险，对局部异常（如螺栓缺失）天然敏感
+- **CoordAtt（Coordinate Attention）**：将通道注意力分解为两个一维方向编码，方向敏感——有助于区分"松动/缺失"这类位置相关的细微差异
+- **LSK（Large Selective Kernel）**：自适应大感受野，适配不同拍摄距离下螺栓尺寸的变化
 
 ### 双卡异构 Ensemble（地面端）
 
@@ -237,13 +251,15 @@ GPU 0: YOLO11m-EMA-SimAM        GPU 1: YOLO11m-P2-SimAM
 | 模型 | 用途 | 参数量 | GFLOPs | 检测尺度 | 注意力 |
 |------|------|--------|--------|---------|--------|
 | YOLO11n-ROI | Stage 1 结构区域 | 2.6M | 6.6 | P3/P4/P5 | 无 |
-| YOLO11s-EMA-SimAM | 车载端主方案 | 9.5M | 21.7 | P3/P4/P5 | EMA + SimAM |
-| YOLO11m-EMA-SimAM | 地面端 GPU 0 | 20.1M | 68.5 | P3/P4/P5 | EMA + SimAM + ECA |
-| YOLO11m-P2-SimAM | 地面端 GPU 1 | ~25M | ~90 | P2/P3/P4/P5 | SimAM ×4 |
+| **YOLO11s-v2** | **车载端主方案（当前最佳）** | **9.98M** | **33.3** | **P2/P3/P4/P5** | EMA + CoordAtt + LSK + SimAM |
+| YOLO11m-v2 | 车载端备选/地面端候选 | ~20M | ~75 | P2/P3/P4/P5 | EMA + CoordAtt + LSK + SimAM |
+| YOLO11s-EMA-SimAM (v1) | 历史基线 | 9.5M | 21.7 | P3/P4/P5 | EMA + SimAM |
+| YOLO11m-EMA-SimAM | 地面端 GPU 0（v1） | 20.1M | 68.5 | P3/P4/P5 | EMA + SimAM + ECA |
+| YOLO11m-P2-SimAM | 地面端 GPU 1（v1） | ~25M | ~90 | P2/P3/P4/P5 | SimAM ×4 |
 
 ### 选型策略
 
-**车载端（单 RTX 4090，≤ 10s）**: 主方案 YOLO11s-EMA-SimAM (FP16)，备选 YOLO11m-EMA-SimAM (INT8)
+**车载端（单 RTX 4090，≤ 10s）**: 主方案 **YOLO11s-v2**（P2 四尺度 + 多注意力，WIoU），8.12 训练 mAP50=0.961 / P=0.917 / R=0.919
 
 **地面端（双 RTX 4090，提报率 ≤ 5%）**: GPU 0 YOLO11m-EMA-SimAM + GPU 1 YOLO11m-P2-SimAM → WBF 融合
 
@@ -268,6 +284,8 @@ COCO 2017 (118K 图像, 80 类)                   自制数据集 (~1880 张, 7 
 ```
 
 > **核心原则**: 每一阶段产出可独立验证，问题可精确追溯。如果某一阶段指标不达标，立即排查该阶段的问题，不进入下一阶段。
+
+> ⚠️ **注**：以上 C1→C2→C3 为早期通用管道说明。当前生产管道为「**Stage 3 主训练（60ep 单阶段，WIoU + AdamW + class_weights）→ Stage 4 短微调（15ep，冻结 backbone）**」，配置位于 `config/train/pretrain/`，由 `scripts/train_pipeline.py` 编排；Stage 5 已弃用（见顶部「当前模型状态」）。
 
 ---
 
