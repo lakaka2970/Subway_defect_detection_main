@@ -1,0 +1,74 @@
+[
+  {
+    "epoch": 10,
+    "layer": 2,
+    "domain_probe_auc": 1.0,
+    "train_activation_enrichment": 1.2188910180160508,
+    "actual_activation_enrichment": 1.044349076092671,
+    "train_counterfactual_cosine": 0.9741845726966858,
+    "actual_counterfactual_cosine": 0.9709649085998535
+  },
+  {
+    "epoch": 10,
+    "layer": 5,
+    "domain_probe_auc": 1.0,
+    "train_activation_enrichment": 1.3362758118045786,
+    "actual_activation_enrichment": 1.0700264622137807,
+    "train_counterfactual_cosine": 0.9950459599494934,
+    "actual_counterfactual_cosine": 0.9899986386299133
+  },
+  {
+    "epoch": 10,
+    "layer": 8,
+    "domain_probe_auc": 1.0,
+    "train_activation_enrichment": 1.689086226549301,
+    "actual_activation_enrichment": 1.075480941795017,
+    "train_counterfactual_cosine": 0.9985212683677673,
+    "actual_counterfactual_cosine": 0.9920259118080139
+  },
+  {
+    "epoch": 10,
+    "layer": 11,
+    "domain_probe_auc": 1.0,
+    "train_activation_enrichment": 0.9290930551230187,
+    "actual_activation_enrichment": 0.9959591968981815,
+    "train_counterfactual_cosine": 0.9890766143798828,
+    "actual_counterfactual_cosine": 0.995842695236206
+  },
+  {
+    "epoch": 10,
+    "layer": 22,
+    "domain_probe_auc": 1.0,
+    "train_activation_enrichment": 2.2751402302078074,
+    "actual_activation_enrichment": 1.2593790331549861,
+    "train_counterfactual_cosine": 0.9946965575218201,
+    "actual_counterfactual_cosine": 0.9894702434539795
+  },
+  {
+    "epoch": 10,
+    "layer": 26,
+    "domain_probe_auc": 1.0,
+    "train_activation_enrichment": 2.339015384406342,
+    "actual_activation_enrichment": 1.3073992663870844,
+    "train_counterfactual_cosine": 0.9972887635231018,
+    "actual_counterfactual_cosine": 0.993764340877533
+  },
+  {
+    "epoch": 10,
+    "layer": 30,
+    "domain_probe_auc": 1.0,
+    "train_activation_enrichment": 2.2329406563622327,
+    "actual_activation_enrichment": 1.2424130162170461,
+    "train_counterfactual_cosine": 0.9962312579154968,
+    "actual_counterfactual_cosine": 0.9944016337394714
+  },
+  {
+    "epoch": 10,
+    "layer": 34,
+    "domain_probe_auc": 1.0,
+    "train_activation_enrichment": 2.436155841636596,
+    "actual_activation_enrichment": 1.2663142349070333,
+    "train_counterfactual_cosine": 0.9949943423271179,
+    "actual_counterfactual_cosine": 0.9974859356880188
+  }
+]
