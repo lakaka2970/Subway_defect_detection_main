@@ -139,6 +139,8 @@ def main():
     ap.add_argument("--evalroot", default="/root/autodl-tmp/subway/out")
     ap.add_argument("--out", default="/root/autodl-tmp/subway/out/calib")
     ap.add_argument("--folds", default="0,1,2,3")
+    ap.add_argument("--pattern", default="fold%d_best.pt")
+    ap.add_argument("--predpattern", default="eval_dgv2a_f%d")
     args = ap.parse_args()
     os.makedirs(args.out, exist_ok=True)
 
@@ -160,7 +162,7 @@ def main():
                 mon.add(img)
         mon = sorted(mon)
         gts = load_gt(args.bench, mon)
-        model = YOLO(os.path.join(args.modeldir, "fold%d_best.pt" % k))
+        model = YOLO(os.path.join(args.modeldir, args.pattern % k))
         mp = slide_infer(model, args.bench, mon)
         scan = {("%.2f" % th): metrics_at(mp, gts, mon, th) for th in GRID}
         ok = [(th, m["recall"]) for th, m in
@@ -168,7 +170,7 @@ def main():
               if m["fp_per_img"] <= FP_BUDGET]
         tstar = max(ok, key=lambda x: x[1])[0] if ok else 0.25
         # 应用到测试折
-        tp_path = os.path.join(args.evalroot, "eval_dgv2a_f%d" % k,
+        tp_path = os.path.join(args.evalroot, args.predpattern % k,
                                "predictions.csv")
         names = [n for n, f in fold_of.items() if f == k]
         tp_by_img = defaultdict(list)
