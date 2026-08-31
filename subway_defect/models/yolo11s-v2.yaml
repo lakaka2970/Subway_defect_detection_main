@@ -20,7 +20,7 @@
 #   Backbone tail: C2PSA (native YOLO11, retained)
 
 # Parameters
-nc: 18  # overridden at runtime by dataset nc
+nc: 16  # 16-class taxonomy; keep in sync with subway_defect/classes.py NC
 scales:
   s: [0.50, 0.50, 1024]  # depth, width, max_channels
 

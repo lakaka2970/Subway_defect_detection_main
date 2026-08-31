@@ -1,0 +1,142 @@
+{
+ "protocol": {
+  "tile": 1280,
+  "stride": 960,
+  "nms": 0.5,
+  "match_iou": 0.5,
+  "max_det": 300,
+  "conf_op": 0.25,
+  "conf_save": 0.001
+ },
+ "weight_sha256": "80267fa85464ff15c072109e4bc97630d49c66fea78ab6d7f6ce9953cb5705b5",
+ "weight_sha256_after": "80267fa85464ff15c072109e4bc97630d49c66fea78ab6d7f6ce9953cb5705b5",
+ "overall": {
+  "macro_ap50_gt_classes": 0.0,
+  "recall_op": 0.0,
+  "fp_per_image": 2.9737827715355807,
+  "gt0_fp_rate": 0.9629629629629629,
+  "per_class_ap50": {
+   "VHBNM": null,
+   "VHBNL": null,
+   "SVHBNL": null,
+   "SVHTNL": null,
+   "CBHPM": 0.0,
+   "CBVPM": 0.0,
+   "GWCNM": null,
+   "GWCNL": null,
+   "BSBM": null,
+   "INSD": null,
+   "DRPS": null
+  },
+  "n_images": 534,
+  "tp": 0,
+  "fp": 1588,
+  "fn": 376
+ },
+ "folds": {
+  "0": {
+   "macro_ap50_gt_classes": 0.0,
+   "recall_op": 0.0,
+   "fp_per_image": 3.315068493150685,
+   "gt0_fp_rate": 0.9629629629629629,
+   "per_class_ap50": {
+    "VHBNM": null,
+    "VHBNL": null,
+    "SVHBNL": null,
+    "SVHTNL": null,
+    "CBHPM": 0.0,
+    "CBVPM": 0.0,
+    "GWCNM": null,
+    "GWCNL": null,
+    "BSBM": null,
+    "INSD": null,
+    "DRPS": null
+   },
+   "n_images": 146,
+   "tp": 0,
+   "fp": 484,
+   "fn": 100
+  },
+  "1": {
+   "macro_ap50_gt_classes": 0.0,
+   "recall_op": 0.0,
+   "fp_per_image": 2.4166666666666665,
+   "gt0_fp_rate": 0.9215686274509803,
+   "per_class_ap50": {
+    "VHBNM": null,
+    "VHBNL": null,
+    "SVHBNL": null,
+    "SVHTNL": null,
+    "CBHPM": 0.0,
+    "CBVPM": 0.0,
+    "GWCNM": null,
+    "GWCNL": null,
+    "BSBM": null,
+    "INSD": null,
+    "DRPS": null
+   },
+   "n_images": 144,
+   "tp": 0,
+   "fp": 348,
+   "fn": 104
+  },
+  "2": {
+   "macro_ap50_gt_classes": 0.0,
+   "recall_op": 0.0,
+   "fp_per_image": 3.1559139784946235,
+   "gt0_fp_rate": 0.9861111111111112,
+   "per_class_ap50": {
+    "VHBNM": null,
+    "VHBNL": null,
+    "SVHBNL": null,
+    "SVHTNL": null,
+    "CBHPM": 0.0,
+    "CBVPM": 0.0,
+    "GWCNM": null,
+    "GWCNL": null,
+    "BSBM": null,
+    "INSD": null,
+    "DRPS": null
+   },
+   "n_images": 186,
+   "tp": 0,
+   "fp": 587,
+   "fn": 125
+  },
+  "3": {
+   "macro_ap50_gt_classes": 0.0,
+   "recall_op": 0.0,
+   "fp_per_image": 2.913793103448276,
+   "gt0_fp_rate": 1.0,
+   "per_class_ap50": {
+    "VHBNM": null,
+    "VHBNL": null,
+    "SVHBNL": null,
+    "SVHTNL": null,
+    "CBHPM": 0.0,
+    "CBVPM": 0.0,
+    "GWCNL": null,
+    "BSBM": null,
+    "INSD": null
+   },
+   "n_images": 58,
+   "tp": 0,
+   "fp": 169,
+   "fn": 47
+  }
+ },
+ "bootstrap_ci95": {
+  "macro_ap50": [
+   0.0,
+   0.0
+  ],
+  "recall_op": [
+   0.0,
+   0.0
+  ],
+  "fp_per_image": [
+   2.773314606741573,
+   3.183567415730337
+  ]
+ }
+}

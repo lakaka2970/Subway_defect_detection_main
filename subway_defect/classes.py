@@ -62,6 +62,45 @@ DEFECT_CLASSES: list[str] = [
 NC: int = len(DEFECT_CLASSES)  # 16
 
 # ═══════════════════════════════════════════════════════════════════════════
+# Model/dataset class order (the order actually used by trained weights)
+# ═══════════════════════════════════════════════════════════════════════════
+#
+# IMPORTANT: the trained YOLO11s-v2 weights and all dataset label files
+# (data/train_data_2/classes.txt, data/Defect_dataset_16_rebuilt, etc.)
+# use a DIFFERENT class order from the canonical DEFECT_CLASSES above.
+# Positions 5-14 are permuted.  Never mix the two orders — convert
+# explicitly with the helpers below.  See docs/plans/8.31泛化性阶段1报告.md §2.4.
+
+MODEL_CLASS_ORDER: list[str] = [
+    "VHBNM",    #  0
+    "VHBNL",    #  1
+    "SVHBNM",   #  2
+    "SVHBNL",   #  3
+    "SVHTNL",   #  4
+    "CBHPM",    #  5
+    "CBVPM",    #  6
+    "RHTBNM",   #  7
+    "RHTBNL",   #  8
+    "GWCSBNM",  #  9
+    "GWCSBNL",  # 10
+    "GWCNM",    # 11
+    "GWCNL",    # 12
+    "BSBM",     # 13
+    "INSD",     # 14
+    "DRPS",     # 15
+]
+
+
+def model_id_to_canonical(model_id: int) -> int:
+    """Map a trained-model class index to the canonical DEFECT_CLASSES index."""
+    return get_class_id(MODEL_CLASS_ORDER[model_id])
+
+
+def canonical_to_model_id(canonical_id: int) -> int:
+    """Map a canonical DEFECT_CLASSES index to the trained-model class index."""
+    return MODEL_CLASS_ORDER.index(get_class_name(canonical_id))
+
+# ═══════════════════════════════════════════════════════════════════════════
 # Chinese name mapping (per 接触网缺陷类型详解.docx)
 # ═══════════════════════════════════════════════════════════════════════════
 
