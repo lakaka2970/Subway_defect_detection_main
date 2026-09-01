@@ -218,3 +218,9 @@ results.csv
 
 # Transient status-check outputs
 /scripts/_*.txt
+
+# 阶段2 回传产物中的大体积/可再生文件
+docs/plans/9.01阶段2产物/remain_pkg/logs/
+docs/plans/9.01阶段2产物/*.tar.gz
+docs/plans/9.01阶段2产物/remain_pkg/*.tar.gz
+docs/plans/9.01阶段2产物/pkg/

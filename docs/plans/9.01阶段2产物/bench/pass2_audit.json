@@ -1,0 +1,712 @@
+{
+ "stats": {
+  "fixed": 55,
+  "boxes_recovered_from_vhb": 52,
+  "boxes_dropped_extra": 14,
+  "boxes_unfilled": 0,
+  "skip_no_source": 35
+ },
+ "detail": [
+  {
+   "image": "100837754_K56813_F1B05-138_1_21.jpg",
+   "exp": {
+    "CBVPM": 1
+   },
+   "act": {
+    "CBVPM": 1
+   },
+   "recovered": 1,
+   "dropped": 0,
+   "unfilled": 0,
+   "ok": true
+  },
+  {
+   "image": "100838984_K56778_F1B05-136_1_21.jpg",
+   "exp": {
+    "CBVPM": 1
+   },
+   "act": {
+    "CBVPM": 1
+   },
+   "recovered": 1,
+   "dropped": 0,
+   "unfilled": 0,
+   "ok": true
+  },
+  {
+   "image": "100841493_K56708_F1B05-132_1_21.jpg",
+   "exp": {
+    "CBVPM": 1
+   },
+   "act": {
+    "CBVPM": 1
+   },
+   "recovered": 1,
+   "dropped": 0,
+   "unfilled": 0,
+   "ok": true
+  },
+  {
+   "image": "100842742_K56673_F1B05-130_1_21.jpg",
+   "exp": {
+    "CBVPM": 1
+   },
+   "act": {
+    "CBVPM": 1
+   },
+   "recovered": 1,
+   "dropped": 0,
+   "unfilled": 0,
+   "ok": true
+  },
+  {
+   "image": "100847689_K56533_F1B05-122_1_21.jpg",
+   "exp": {
+    "CBVPM": 1
+   },
+   "act": {
+    "CBVPM": 1
+   },
+   "recovered": 1,
+   "dropped": 0,
+   "unfilled": 0,
+   "ok": true
+  },
+  {
+   "image": "100850176_K56463_F1B05-118_1_21.jpg",
+   "exp": {
+    "CBVPM": 1
+   },
+   "act": {
+    "CBVPM": 1
+   },
+   "recovered": 1,
+   "dropped": 0,
+   "unfilled": 0,
+   "ok": true
+  },
+  {
+   "image": "100853908_K56358_F1B05-112_1_21.jpg",
+   "exp": {},
+   "act": {},
+   "recovered": 0,
+   "dropped": 1,
+   "unfilled": 0,
+   "ok": true
+  },
+  {
+   "image": "100943761_K54885_F1B05-034_1_21.jpg",
+   "exp": {
+    "CBVPM": 1
+   },
+   "act": {
+    "CBVPM": 1
+   },
+   "recovered": 1,
+   "dropped": 0,
+   "unfilled": 0,
+   "ok": true
+  },
+  {
+   "image": "101148227_K51259_F1B04-904_1_21.jpg",
+   "exp": {
+    "CBVPM": 1
+   },
+   "act": {
+    "CBVPM": 1
+   },
+   "recovered": 1,
+   "dropped": 0,
+   "unfilled": 0,
+   "ok": true
+  },
+  {
+   "image": "101226746_K50429_F1B04-852_1_21.jpg",
+   "exp": {
+    "CBVPM": 1
+   },
+   "act": {
+    "CBVPM": 1
+   },
+   "recovered": 1,
+   "dropped": 0,
+   "unfilled": 0,
+   "ok": true
+  },
+  {
+   "image": "101246217_K50042_F1B04-828_1_21.jpg",
+   "exp": {
+    "CBVPM": 1
+   },
+   "act": {
+    "CBVPM": 1
+   },
+   "recovered": 1,
+   "dropped": 0,
+   "unfilled": 0,
+   "ok": true
+  },
+  {
+   "image": "101253501_K49909_F1B04-820_1_21.jpg",
+   "exp": {
+    "CBHPM": 1
+   },
+   "act": {
+    "CBHPM": 1
+   },
+   "recovered": 1,
+   "dropped": 0,
+   "unfilled": 0,
+   "ok": true
+  },
+  {
+   "image": "101305603_K49802_F1B04-812a_1_21.jpg",
+   "exp": {
+    "CBVPM": 1
+   },
+   "act": {
+    "CBVPM": 1
+   },
+   "recovered": 1,
+   "dropped": 0,
+   "unfilled": 0,
+   "ok": true
+  },
+  {
+   "image": "101417878_K49612_F1B04-802_1_21.jpg",
+   "exp": {
+    "CBVPM": 1
+   },
+   "act": {
+    "CBVPM": 1
+   },
+   "recovered": 1,
+   "dropped": 0,
+   "unfilled": 0,
+   "ok": true
+  },
+  {
+   "image": "101437328_K49127_F1B04-774_1_21.jpg",
+   "exp": {
+    "CBHPM": 1,
+    "CBVPM": 1
+   },
+   "act": {
+    "CBHPM": 1,
+    "CBVPM": 1
+   },
+   "recovered": 1,
+   "dropped": 0,
+   "unfilled": 0,
+   "ok": true
+  },
+  {
+   "image": "101439751_K49047_F1B04-770_1_21.jpg",
+   "exp": {
+    "CBHPM": 1,
+    "CBVPM": 1
+   },
+   "act": {
+    "CBHPM": 1,
+    "CBVPM": 1
+   },
+   "recovered": 1,
+   "dropped": 0,
+   "unfilled": 0,
+   "ok": true
+  },
+  {
+   "image": "101444590_K48887_F1B04-762_1_21.jpg",
+   "exp": {
+    "CBVPM": 1
+   },
+   "act": {
+    "CBVPM": 1
+   },
+   "recovered": 1,
+   "dropped": 0,
+   "unfilled": 0,
+   "ok": true
+  },
+  {
+   "image": "101449927_K48726_F1B04-754_1_21.jpg",
+   "exp": {
+    "CBVPM": 1
+   },
+   "act": {
+    "CBVPM": 1
+   },
+   "recovered": 1,
+   "dropped": 0,
+   "unfilled": 0,
+   "ok": true
+  },
+  {
+   "image": "101458197_K48525_F1B04-744_1_21.jpg",
+   "exp": {
+    "CBHPM": 1,
+    "CBVPM": 1
+   },
+   "act": {
+    "CBHPM": 1,
+    "CBVPM": 1
+   },
+   "recovered": 1,
+   "dropped": 0,
+   "unfilled": 0,
+   "ok": true
+  },
+  {
+   "image": "101501543_K48432_F1B04-738_1_21.jpg",
+   "exp": {
+    "CBVPM": 1
+   },
+   "act": {
+    "CBVPM": 1
+   },
+   "recovered": 1,
+   "dropped": 0,
+   "unfilled": 0,
+   "ok": true
+  },
+  {
+   "image": "101506546_K48395_F1B04-736_1_21.jpg",
+   "exp": {
+    "CBVPM": 1
+   },
+   "act": {
+    "CBVPM": 1
+   },
+   "recovered": 1,
+   "dropped": 0,
+   "unfilled": 0,
+   "ok": true
+  },
+  {
+   "image": "101624226_K48245_F1B04-728_1_21.jpg",
+   "exp": {
+    "CBHPM": 1
+   },
+   "act": {
+    "CBHPM": 1
+   },
+   "recovered": 1,
+   "dropped": 1,
+   "unfilled": 0,
+   "ok": true
+  },
+  {
+   "image": "101636323_K48019_F1B04-714a_1_21.jpg",
+   "exp": {
+    "CBHPM": 1,
+    "CBVPM": 1
+   },
+   "act": {
+    "CBHPM": 1,
+    "CBVPM": 1
+   },
+   "recovered": 1,
+   "dropped": 0,
+   "unfilled": 0,
+   "ok": true
+  },
+  {
+   "image": "101640962_K47907_F1B04-710_1_21.jpg",
+   "exp": {
+    "CBVPM": 1
+   },
+   "act": {
+    "CBVPM": 1
+   },
+   "recovered": 1,
+   "dropped": 0,
+   "unfilled": 0,
+   "ok": true
+  },
+  {
+   "image": "101720094_K46511_F1B04-636_1_21.jpg",
+   "exp": {
+    "CBVPM": 1
+   },
+   "act": {
+    "CBVPM": 1
+   },
+   "recovered": 1,
+   "dropped": 0,
+   "unfilled": 0,
+   "ok": true
+  },
+  {
+   "image": "101722237_K46430_F1B04-632_1_21.jpg",
+   "exp": {
+    "CBVPM": 1
+   },
+   "act": {
+    "CBVPM": 1
+   },
+   "recovered": 1,
+   "dropped": 0,
+   "unfilled": 0,
+   "ok": true
+  },
+  {
+   "image": "101725389_K46311_F1B04-626_1_21.jpg",
+   "exp": {
+    "CBVPM": 1,
+    "CBHPM": 1
+   },
+   "act": {
+    "CBHPM": 1,
+    "CBVPM": 1
+   },
+   "recovered": 2,
+   "dropped": 0,
+   "unfilled": 0,
+   "ok": true
+  },
+  {
+   "image": "101731607_K46069_F1B04-614_1_21.jpg",
+   "exp": {
+    "CBVPM": 1
+   },
+   "act": {
+    "CBVPM": 1
+   },
+   "recovered": 1,
+   "dropped": 0,
+   "unfilled": 0,
+   "ok": true
+  },
+  {
+   "image": "101732642_K46030_F1B04-612_1_21.jpg",
+   "exp": {
+    "CBVPM": 1
+   },
+   "act": {
+    "CBVPM": 1
+   },
+   "recovered": 1,
+   "dropped": 0,
+   "unfilled": 0,
+   "ok": true
+  },
+  {
+   "image": "101737815_K45831_F1B04-602_1_21.jpg",
+   "exp": {
+    "CBHPM": 1,
+    "CBVPM": 1
+   },
+   "act": {
+    "CBHPM": 1,
+    "CBVPM": 1
+   },
+   "recovered": 1,
+   "dropped": 0,
+   "unfilled": 0,
+   "ok": true
+  },
+  {
+   "image": "101746409_K45511_F1B04-586_1_21.jpg",
+   "exp": {
+    "CBVPM": 1
+   },
+   "act": {
+    "CBVPM": 1
+   },
+   "recovered": 1,
+   "dropped": 0,
+   "unfilled": 0,
+   "ok": true
+  },
+  {
+   "image": "101751403_K45325_F1B04-574a_1_21.jpg",
+   "exp": {
+    "CBVPM": 1
+   },
+   "act": {
+    "CBVPM": 1
+   },
+   "recovered": 1,
+   "dropped": 0,
+   "unfilled": 0,
+   "ok": true
+  },
+  {
+   "image": "101752397_K45296_F1B04-574_1_21.jpg",
+   "exp": {
+    "CBVPM": 1
+   },
+   "act": {
+    "CBVPM": 1
+   },
+   "recovered": 1,
+   "dropped": 0,
+   "unfilled": 0,
+   "ok": true
+  },
+  {
+   "image": "101754849_K45219_F1B04-570_1_21.jpg",
+   "exp": {
+    "CBVPM": 1
+   },
+   "act": {
+    "CBVPM": 1
+   },
+   "recovered": 1,
+   "dropped": 0,
+   "unfilled": 0,
+   "ok": true
+  },
+  {
+   "image": "101757382_K45141_F1B04-566_1_21.jpg",
+   "exp": {
+    "CBVPM": 1
+   },
+   "act": {
+    "CBVPM": 1
+   },
+   "recovered": 1,
+   "dropped": 0,
+   "unfilled": 0,
+   "ok": true
+  },
+  {
+   "image": "101805480_K44915_F1B04-554_1_21.jpg",
+   "exp": {
+    "CBVPM": 1
+   },
+   "act": {
+    "CBVPM": 1
+   },
+   "recovered": 1,
+   "dropped": 0,
+   "unfilled": 0,
+   "ok": true
+  },
+  {
+   "image": "101826982_K44292_F1B04-520_1_21.jpg",
+   "exp": {
+    "CBVPM": 1
+   },
+   "act": {
+    "CBVPM": 1
+   },
+   "recovered": 1,
+   "dropped": 0,
+   "unfilled": 0,
+   "ok": true
+  },
+  {
+   "image": "101843371_K43691_F1B04-490_1_21.jpg",
+   "exp": {
+    "CBVPM": 1
+   },
+   "act": {
+    "CBVPM": 1
+   },
+   "recovered": 1,
+   "dropped": 0,
+   "unfilled": 0,
+   "ok": true
+  },
+  {
+   "image": "101845167_K43618_F1B04-484a_1_21.jpg",
+   "exp": {
+    "CBVPM": 1
+   },
+   "act": {
+    "CBVPM": 1
+   },
+   "recovered": 1,
+   "dropped": 0,
+   "unfilled": 0,
+   "ok": true
+  },
+  {
+   "image": "102139839_K37151_F1B04-146_1_21.jpg",
+   "exp": {},
+   "act": {},
+   "recovered": 0,
+   "dropped": 1,
+   "unfilled": 0,
+   "ok": true
+  },
+  {
+   "image": "102142242_K37107_F1B04-144_1_21.jpg",
+   "exp": {},
+   "act": {},
+   "recovered": 0,
+   "dropped": 1,
+   "unfilled": 0,
+   "ok": true
+  },
+  {
+   "image": "102147116_K36931_F1B04-136_1_21.jpg",
+   "exp": {
+    "CBHPM": 1
+   },
+   "act": {
+    "CBHPM": 1
+   },
+   "recovered": 1,
+   "dropped": 0,
+   "unfilled": 0,
+   "ok": true
+  },
+  {
+   "image": "102148448_K36886_F1B04-134_1_21.jpg",
+   "exp": {
+    "CBHPM": 2
+   },
+   "act": {
+    "CBHPM": 2
+   },
+   "recovered": 2,
+   "dropped": 0,
+   "unfilled": 0,
+   "ok": true
+  },
+  {
+   "image": "102149823_K36843_F1B04-132_1_21.jpg",
+   "exp": {
+    "CBHPM": 2
+   },
+   "act": {
+    "CBHPM": 2
+   },
+   "recovered": 2,
+   "dropped": 0,
+   "unfilled": 0,
+   "ok": true
+  },
+  {
+   "image": "102151085_K36796_F1B04-130_1_21.jpg",
+   "exp": {
+    "CBHPM": 1
+   },
+   "act": {
+    "CBHPM": 1
+   },
+   "recovered": 1,
+   "dropped": 1,
+   "unfilled": 0,
+   "ok": true
+  },
+  {
+   "image": "102152561_K36756_F1B04-128_1_21.jpg",
+   "exp": {
+    "CBVPM": 1,
+    "CBHPM": 1
+   },
+   "act": {
+    "CBHPM": 1,
+    "CBVPM": 1
+   },
+   "recovered": 2,
+   "dropped": 0,
+   "unfilled": 0,
+   "ok": true
+  },
+  {
+   "image": "102157406_K36621_F1B04-122_1_21.jpg",
+   "exp": {
+    "CBHPM": 1
+   },
+   "act": {
+    "CBHPM": 1
+   },
+   "recovered": 1,
+   "dropped": 1,
+   "unfilled": 0,
+   "ok": true
+  },
+  {
+   "image": "102159151_K36580_F1B04-120_1_21.jpg",
+   "exp": {
+    "CBHPM": 1
+   },
+   "act": {
+    "CBHPM": 1
+   },
+   "recovered": 1,
+   "dropped": 0,
+   "unfilled": 0,
+   "ok": true
+  },
+  {
+   "image": "102202043_K36499_F1B04-116_1_21.jpg",
+   "exp": {
+    "CBHPM": 1
+   },
+   "act": {
+    "CBHPM": 1
+   },
+   "recovered": 1,
+   "dropped": 0,
+   "unfilled": 0,
+   "ok": true
+  },
+  {
+   "image": "102210404_K36332_F1B04-106_1_21.jpg",
+   "exp": {
+    "CBHPM": 1
+   },
+   "act": {
+    "CBHPM": 1
+   },
+   "recovered": 1,
+   "dropped": 1,
+   "unfilled": 0,
+   "ok": true
+  },
+  {
+   "image": "102425487_K35897_F1B04-080_1_21.jpg",
+   "exp": {},
+   "act": {},
+   "recovered": 0,
+   "dropped": 2,
+   "unfilled": 0,
+   "ok": true
+  },
+  {
+   "image": "102437078_K35681_F1B04-070_1_21.jpg",
+   "exp": {
+    "CBHPM": 1
+   },
+   "act": {
+    "CBHPM": 1
+   },
+   "recovered": 1,
+   "dropped": 0,
+   "unfilled": 0,
+   "ok": true
+  },
+  {
+   "image": "102439200_K35636_F1B04-068_1_21.jpg",
+   "exp": {},
+   "act": {},
+   "recovered": 0,
+   "dropped": 2,
+   "unfilled": 0,
+   "ok": true
+  },
+  {
+   "image": "103439580_K17836_F1B02-1032_1_21.jpg",
+   "exp": {},
+   "act": {},
+   "recovered": 0,
+   "dropped": 1,
+   "unfilled": 0,
+   "ok": true
+  },
+  {
+   "image": "103443082_K17756_F1B02-1028_1_21.jpg",
+   "exp": {},
+   "act": {},
+   "recovered": 0,
+   "dropped": 2,
+   "unfilled": 0,
+   "ok": true
+  }
+ ]
+}

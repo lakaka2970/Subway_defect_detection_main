@@ -1,0 +1,59 @@
+{
+ "protocol": {
+  "tile": 1280,
+  "stride": 960,
+  "nms": 0.5,
+  "match_iou": 0.5,
+  "max_det": 300,
+  "conf_op": 0.25,
+  "conf_save": 0.001
+ },
+ "weight_sha256": "feae292a4031907d1bf15e44ad0898e46673cac2a70fe8da8a0dc9439052504e",
+ "weight_sha256_after": "feae292a4031907d1bf15e44ad0898e46673cac2a70fe8da8a0dc9439052504e",
+ "overall": {
+  "macro_ap50_gt_classes": 0.006834650856389987,
+  "recall_op": 0.048,
+  "fp_per_image": 0.3709677419354839,
+  "gt0_fp_rate": 0.3333333333333333,
+  "per_class_ap50": {
+   "CBHPM": 0.0137,
+   "CBVPM": 0.0,
+   "INSD": null
+  },
+  "n_images": 186,
+  "tp": 6,
+  "fp": 69,
+  "fn": 119
+ },
+ "folds": {
+  "2": {
+   "macro_ap50_gt_classes": 0.006834650856389987,
+   "recall_op": 0.048,
+   "fp_per_image": 0.3709677419354839,
+   "gt0_fp_rate": 0.3333333333333333,
+   "per_class_ap50": {
+    "CBHPM": 0.0137,
+    "CBVPM": 0.0,
+    "INSD": null
+   },
+   "n_images": 186,
+   "tp": 6,
+   "fp": 69,
+   "fn": 119
+  }
+ },
+ "bootstrap_ci95": {
+  "macro_ap50": [
+   0.0009487216807544132,
+   0.027831120440991623
+  ],
+  "recall_op": [
+   0.015618990384615386,
+   0.08943089430894309
+  ],
+  "fp_per_image": [
+   0.2849462365591398,
+   0.45161290322580644
+  ]
+ }
+}

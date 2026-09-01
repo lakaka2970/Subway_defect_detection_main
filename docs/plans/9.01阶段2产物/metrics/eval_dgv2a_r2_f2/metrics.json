@@ -1,0 +1,59 @@
+{
+ "protocol": {
+  "tile": 1280,
+  "stride": 960,
+  "nms": 0.5,
+  "match_iou": 0.5,
+  "max_det": 300,
+  "conf_op": 0.25,
+  "conf_save": 0.001
+ },
+ "weight_sha256": "23113f2b2ae7efdabe90352a769f39405d171f0a0088511ad736cd6f9fcc8fde",
+ "weight_sha256_after": "23113f2b2ae7efdabe90352a769f39405d171f0a0088511ad736cd6f9fcc8fde",
+ "overall": {
+  "macro_ap50_gt_classes": 0.16232083122490004,
+  "recall_op": 0.32,
+  "fp_per_image": 0.42473118279569894,
+  "gt0_fp_rate": 0.16666666666666666,
+  "per_class_ap50": {
+   "CBHPM": 0.324,
+   "CBVPM": 0.0007,
+   "BSBM": null
+  },
+  "n_images": 186,
+  "tp": 40,
+  "fp": 79,
+  "fn": 85
+ },
+ "folds": {
+  "2": {
+   "macro_ap50_gt_classes": 0.16232083122490004,
+   "recall_op": 0.32,
+   "fp_per_image": 0.42473118279569894,
+   "gt0_fp_rate": 0.16666666666666666,
+   "per_class_ap50": {
+    "CBHPM": 0.324,
+    "CBVPM": 0.0007,
+    "BSBM": null
+   },
+   "n_images": 186,
+   "tp": 40,
+   "fp": 79,
+   "fn": 85
+  }
+ },
+ "bootstrap_ci95": {
+  "macro_ap50": [
+   0.09506677159142582,
+   0.18979342822490453
+  ],
+  "recall_op": [
+   0.24443569553805775,
+   0.4028803822613551
+  ],
+  "fp_per_image": [
+   0.3333333333333333,
+   0.5162634408602149
+  ]
+ }
+}

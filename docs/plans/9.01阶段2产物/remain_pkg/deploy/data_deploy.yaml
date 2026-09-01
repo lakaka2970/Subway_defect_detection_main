@@ -1,0 +1,20 @@
+path: /
+train: /root/autodl-tmp/subway/data/tiles/index/deploy_train.txt
+val: /root/autodl-tmp/subway/data/tiles/index/deploy_val.txt
+names:
+  0: VHBNM
+  1: VHBNL
+  2: SVHBNM
+  3: SVHBNL
+  4: SVHTNL
+  5: CBHPM
+  6: CBVPM
+  7: RHTBNM
+  8: RHTBNL
+  9: GWCSBNM
+  10: GWCSBNL
+  11: GWCNM
+  12: GWCNL
+  13: BSBM
+  14: INSD
+  15: DRPS

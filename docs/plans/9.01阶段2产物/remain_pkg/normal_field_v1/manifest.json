@@ -1,0 +1,29 @@
+{
+ "generated_at": "2026-08-30 16:55:09",
+ "source": "/root/autodl-tmp/subway/data/Normal_dataset",
+ "source_total": 1000,
+ "dropped_overlap": 79,
+ "dropped_same_position": 242,
+ "dropped_phash": 0,
+ "unique_images": 679,
+ "selected_images": 679,
+ "segments": {
+  "F1B02": 1,
+  "F1A02": 26,
+  "F1A03": 15,
+  "F1A04": 289,
+  "F1A05": 137,
+  "F1B05": 125,
+  "F1B04": 86
+ },
+ "tile": 1280,
+ "stride": 960,
+ "min_std": 8.0,
+ "min_entropy": 3.0,
+ "tiles_kept": 7846,
+ "tiles_dropped": 9129,
+ "train_images": 577,
+ "val_images": 102,
+ "flagged": 0,
+ "note": "全部标签为空文件（纯负样本）"
+}

@@ -1,0 +1,15 @@
+{
+ "n_benchmark": 534,
+ "n_excluded_conflict": 35,
+ "gt_totals": {
+  "CBVPM": 172,
+  "CBHPM": 204
+ },
+ "folds": {
+  "0": 146,
+  "1": 144,
+  "2": 186,
+  "3": 58
+ },
+ "f1b04_kpost_median": 45791
+}
