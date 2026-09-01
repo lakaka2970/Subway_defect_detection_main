@@ -1,0 +1,350 @@
+{
+  "Q1_box_count_gap": {
+    "n_common_images": 500,
+    "old_7class_CBHPM_CBVPM_on_common_imgs": {
+      "5": 193,
+      "6": 145
+    },
+    "rebuilt_16class_on_common_imgs": {
+      "5": 204,
+      "6": 172
+    },
+    "delta": {
+      "5": 11,
+      "6": 27
+    },
+    "per_image_delta_hist": {
+      "-2": 3,
+      "-1": 4,
+      "0": 449,
+      "1": 40,
+      "2": 4
+    },
+    "examples_of_mismatch": [
+      {
+        "image": "100837754_K56813_F1B05-138_1_21",
+        "old_cb": 0,
+        "new_cb": 1
+      },
+      {
+        "image": "100838984_K56778_F1B05-136_1_21",
+        "old_cb": 0,
+        "new_cb": 1
+      },
+      {
+        "image": "100841493_K56708_F1B05-132_1_21",
+        "old_cb": 0,
+        "new_cb": 1
+      },
+      {
+        "image": "100842742_K56673_F1B05-130_1_21",
+        "old_cb": 0,
+        "new_cb": 1
+      },
+      {
+        "image": "100847689_K56533_F1B05-122_1_21",
+        "old_cb": 0,
+        "new_cb": 1
+      },
+      {
+        "image": "100850176_K56463_F1B05-118_1_21",
+        "old_cb": 0,
+        "new_cb": 1
+      },
+      {
+        "image": "100853908_K56358_F1B05-112_1_21",
+        "old_cb": 1,
+        "new_cb": 0
+      },
+      {
+        "image": "100943761_K54885_F1B05-034_1_21",
+        "old_cb": 0,
+        "new_cb": 1
+      },
+      {
+        "image": "101148227_K51259_F1B04-904_1_21",
+        "old_cb": 0,
+        "new_cb": 1
+      },
+      {
+        "image": "101226746_K50429_F1B04-852_1_21",
+        "old_cb": 0,
+        "new_cb": 1
+      },
+      {
+        "image": "101246217_K50042_F1B04-828_1_21",
+        "old_cb": 0,
+        "new_cb": 1
+      },
+      {
+        "image": "101253501_K49909_F1B04-820_1_21",
+        "old_cb": 0,
+        "new_cb": 1
+      }
+    ],
+    "old7class_total_hist": {
+      "0": 472,
+      "1": 312,
+      "2": 554,
+      "3": 175,
+      "4": 368,
+      "5": 341,
+      "6": 260
+    },
+    "old7class_n_images": 899,
+    "rebuilt_n_images": 534,
+    "rebuild_audit.json": {
+      "summary": "<dict len=7>",
+      "grouping": "<dict len=8>"
+    },
+    "pass2_audit.json": {
+      "stats": "<dict len=5>",
+      "detail": "<list len=55>"
+    }
+  },
+  "Q2_normal_overlap": {
+    "n_normal_inter_bench": 44,
+    "n_normal_total": 1000,
+    "segments_of_overlap": {
+      "F1B04": 34,
+      "F1B03": 5,
+      "F1B02": 5
+    },
+    "overlap_with_GT": 4,
+    "overlap_empty_GT": 40,
+    "normal_inter_olddefect": 10,
+    "overlap_examples": [
+      {
+        "img": "102856918_K26447_F1B03-154_1_21",
+        "seg": "F1B03",
+        "km": 26447,
+        "n_gt": 0
+      },
+      {
+        "img": "102858416_K26412_F1B03-152_1_21",
+        "seg": "F1B03",
+        "km": 26412,
+        "n_gt": 0
+      },
+      {
+        "img": "102859874_K26378_F1B03-150_1_21",
+        "seg": "F1B03",
+        "km": 26378,
+        "n_gt": 1
+      },
+      {
+        "img": "102901451_K26341_F1B03-148_1_21",
+        "seg": "F1B03",
+        "km": 26341,
+        "n_gt": 1
+      },
+      {
+        "img": "102903294_K26305_F1B03-146_1_21",
+        "seg": "F1B03",
+        "km": 26305,
+        "n_gt": 1
+      },
+      {
+        "img": "103439580_K17836_F1B02-1032_1_21",
+        "seg": "F1B02",
+        "km": 17836,
+        "n_gt": 0
+      },
+      {
+        "img": "103443082_K17756_F1B02-1028_1_21",
+        "seg": "F1B02",
+        "km": 17756,
+        "n_gt": 0
+      },
+      {
+        "img": "103523538_K16880_F1B02-984_1_21",
+        "seg": "F1B02",
+        "km": 16880,
+        "n_gt": 0
+      },
+      {
+        "img": "103648072_K16476_F1B02-960_1_21",
+        "seg": "F1B02",
+        "km": 16476,
+        "n_gt": 1
+      },
+      {
+        "img": "103650474_K16446_F1B02-958_1_21",
+        "seg": "F1B02",
+        "km": 16446,
+        "n_gt": 0
+      },
+      {
+        "img": "190541484_K47307_F1B04-680_1_21",
+        "seg": "F1B04",
+        "km": 47307,
+        "n_gt": 0
+      },
+      {
+        "img": "190542729_K47267_F1B04-678_1_21",
+        "seg": "F1B04",
+        "km": 47267,
+        "n_gt": 0
+      },
+      {
+        "img": "190543923_K47227_F1B04-676_1_21",
+        "seg": "F1B04",
+        "km": 47227,
+        "n_gt": 0
+      },
+      {
+        "img": "190545225_K47188_F1B04-674_1_21",
+        "seg": "F1B04",
+        "km": 47188,
+        "n_gt": 0
+      },
+      {
+        "img": "190546438_K47146_F1B04-672_1_21",
+        "seg": "F1B04",
+        "km": 47146,
+        "n_gt": 0
+      }
+    ],
+    "n_in_normal_not_in_olddefect": 34,
+    "n_in_both_normal_and_olddefect": 10,
+    "bench_composition": {
+      "n_bench": 534,
+      "from_old_defect_dataset": 500,
+      "from_normal_only": 34,
+      "unexplained": 0
+    }
+  },
+  "Q3_fold3_geometry": {
+    "fold0": {
+      "n": 146,
+      "by_segment": {
+        "F1B04": {
+          "n": 146,
+          "km_min": 34345,
+          "km_max": 45791
+        }
+      }
+    },
+    "fold1": {
+      "n": 144,
+      "by_segment": {
+        "F1B04": {
+          "n": 144,
+          "km_min": 45831,
+          "km_max": 53481
+        }
+      }
+    },
+    "fold2": {
+      "n": 186,
+      "by_segment": {
+        "F1B03": {
+          "n": 186,
+          "km_min": 26305,
+          "km_max": 34259
+        }
+      }
+    },
+    "fold3": {
+      "n": 58,
+      "by_segment": {
+        "F1B02": {
+          "n": 5,
+          "km_min": 16446,
+          "km_max": 17836
+        },
+        "F1B05": {
+          "n": 53,
+          "km_min": 54405,
+          "km_max": 58825
+        }
+      }
+    },
+    "Normal_dataset_km_ranges": {
+      "F1A02": {
+        "n": 26,
+        "km_min": 22485,
+        "km_max": 23551
+      },
+      "F1A03": {
+        "n": 15,
+        "km_min": 23593,
+        "km_max": 24241
+      },
+      "F1A04": {
+        "n": 453,
+        "km_min": 36099,
+        "km_max": 54189
+      },
+      "F1A05": {
+        "n": 215,
+        "km_min": 54191,
+        "km_max": 60461
+      },
+      "F1B02": {
+        "n": 6,
+        "km_min": 16446,
+        "km_max": 20646
+      },
+      "F1B03": {
+        "n": 5,
+        "km_min": 26305,
+        "km_max": 26447
+      },
+      "F1B04": {
+        "n": 155,
+        "km_min": 43520,
+        "km_max": 50107
+      },
+      "F1B05": {
+        "n": 125,
+        "km_min": 58933,
+        "km_max": 64397
+      }
+    },
+    "benchmark_km_ranges": {
+      "F1B02": {
+        "n": 5,
+        "km_min": 16446,
+        "km_max": 17836
+      },
+      "F1B03": {
+        "n": 186,
+        "km_min": 26305,
+        "km_max": 34259
+      },
+      "F1B04": {
+        "n": 290,
+        "km_min": 34345,
+        "km_max": 53481
+      },
+      "F1B05": {
+        "n": 53,
+        "km_min": 54405,
+        "km_max": 58825
+      }
+    },
+    "old_defect_dataset_km_ranges": {
+      "F1B02": {
+        "n": 9,
+        "km_min": 16446,
+        "km_max": 17836
+      },
+      "F1B03": {
+        "n": 333,
+        "km_min": 26305,
+        "km_max": 34259
+      },
+      "F1B04": {
+        "n": 466,
+        "km_min": 34345,
+        "km_max": 53481
+      },
+      "F1B05": {
+        "n": 91,
+        "km_min": 54405,
+        "km_max": 58825
+      }
+    }
+  }
+}

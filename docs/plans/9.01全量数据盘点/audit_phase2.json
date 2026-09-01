@@ -1,0 +1,292 @@
+{
+  "A_rebuilt_benchmark": {
+    "n_images": 534,
+    "label_stats": {
+      "n_files": 534,
+      "n_boxes": 376,
+      "n_empty": 189,
+      "class_hist": {
+        "5": 204,
+        "6": 172
+      },
+      "per_img_hist": {
+        "0": 189,
+        "1": 314,
+        "2": 31
+      }
+    },
+    "label_stats_named": {
+      "5 CBHPM": 204,
+      "6 CBVPM": 172
+    },
+    "segment_dist": {
+      "F1B04": 290,
+      "F1B03": 186,
+      "F1B05": 53,
+      "F1B02": 5
+    },
+    "fold_columns": [
+      "image",
+      "fold",
+      "segment",
+      "kpost"
+    ],
+    "folds": {
+      "0": {
+        "n": 146,
+        "segments": {
+          "F1B04": 146
+        },
+        "km_range": [
+          34345,
+          45791
+        ]
+      },
+      "1": {
+        "n": 144,
+        "segments": {
+          "F1B04": 144
+        },
+        "km_range": [
+          45831,
+          53481
+        ]
+      },
+      "2": {
+        "n": 186,
+        "segments": {
+          "F1B03": 186
+        },
+        "km_range": [
+          26305,
+          34259
+        ]
+      },
+      "3": {
+        "n": 58,
+        "segments": {
+          "F1B05": 53,
+          "F1B02": 5
+        },
+        "km_range": [
+          16446,
+          58825
+        ]
+      }
+    }
+  },
+  "B_leakage_risk": {
+    "train_data_3_raw": {
+      "n_images_total": 3985,
+      "n_overlap_with_benchmark": 313,
+      "overlap_segments": {
+        "F1B04": 157,
+        "F1B03": 114,
+        "F1B05": 39,
+        "F1B02": 3
+      },
+      "n_field_images_in_trainset": 313,
+      "field_segments": {
+        "F1B04": 157,
+        "F1B03": 114,
+        "F1B05": 39,
+        "F1B02": 3
+      }
+    },
+    "train_data_3_raw_2560": {
+      "n_images_total": 847,
+      "n_overlap_with_benchmark": 245,
+      "overlap_segments": {
+        "F1B04": 127,
+        "F1B03": 91,
+        "F1B05": 25,
+        "F1B02": 2
+      },
+      "n_field_images_in_trainset": 245,
+      "field_segments": {
+        "F1B04": 127,
+        "F1B03": 91,
+        "F1B05": 25,
+        "F1B02": 2
+      }
+    },
+    "train_data_2": {
+      "n_images_total": 8883,
+      "n_overlap_with_benchmark": 0,
+      "overlap_segments": {}
+    },
+    "Defect_dataset(旧7类)": {
+      "n_images_total": 899,
+      "n_overlap_with_benchmark": 500,
+      "overlap_segments": {
+        "F1B04": 256,
+        "F1B03": 186,
+        "F1B05": 53,
+        "F1B02": 5
+      }
+    }
+  },
+  "C_normal_assets": {
+    "Normal_dataset": {
+      "n_images": 1000,
+      "label_stats": {
+        "n_files": 1000,
+        "n_boxes": 0,
+        "n_empty": 1000,
+        "class_hist": {},
+        "per_img_hist": {
+          "0": 1000
+        }
+      },
+      "segment_dist": {
+        "F1A04": 453,
+        "F1A05": 215,
+        "F1B04": 155,
+        "F1B05": 125,
+        "F1A02": 26,
+        "F1A03": 15,
+        "F1B02": 6,
+        "F1B03": 5
+      },
+      "n_overlap_with_benchmark": 44
+    },
+    "normal_field_v1_sample": {
+      "n_tiles": 303,
+      "label_stats": {
+        "n_files": 303,
+        "n_boxes": 0,
+        "n_empty": 303,
+        "class_hist": {},
+        "per_img_hist": {
+          "0": 303
+        }
+      },
+      "source_image_segments": {
+        "F1B04": 57,
+        "F1A03": 55,
+        "F1A02": 50,
+        "F1B05": 46,
+        "F1A05": 43,
+        "F1A04": 40,
+        "F1B02": 12
+      }
+    },
+    "tiles_normal": {
+      "n_tiles": 23025,
+      "n_source_images": 921,
+      "segment_dist_of_sources": {
+        "F1A04": 453,
+        "F1A05": 215,
+        "F1B05": 125,
+        "F1B04": 86,
+        "F1A02": 26,
+        "F1A03": 15,
+        "F1B02": 1
+      },
+      "n_source_overlap_with_benchmark": 0
+    }
+  },
+  "D_supervision_inventory": {
+    "target_domain_rebuilt": {
+      "5 CBHPM": 204,
+      "6 CBVPM": 172
+    },
+    "target_domain_old7class": {
+      "0 VHBNM": 739,
+      "1 VHBNL": 483,
+      "2 SVHBNM": 855,
+      "3 SVHBNL": 272,
+      "4 SVHTNL": 575,
+      "5 CBHPM": 534,
+      "6 CBVPM": 405
+    },
+    "source_domain_train_data_2": {
+      "0 VHBNM": 356,
+      "1 VHBNL": 1791,
+      "2 SVHBNM": 686,
+      "3 SVHBNL": 909,
+      "4 SVHTNL": 898,
+      "5 CBHPM": 399,
+      "6 CBVPM": 698,
+      "11 GWCNM": 510,
+      "12 GWCNL": 978,
+      "13 BSBM": 521,
+      "14 INSD": 578,
+      "15 DRPS": 719
+    },
+    "source_domain_Defect_dataset_2": {
+      "0 VHBNM": 87,
+      "1 VHBNL": 551,
+      "2 SVHBNM": 190,
+      "3 SVHBNL": 402,
+      "4 SVHTNL": 544,
+      "5 CBHPM": 103,
+      "6 CBVPM": 328,
+      "7 RHTBNM": 3,
+      "8 RHTBNL": 7,
+      "9 GWCSBNM": 3,
+      "10 GWCSBNL": 5,
+      "11 GWCNM": 189,
+      "12 GWCNL": 589,
+      "13 BSBM": 201,
+      "14 INSD": 200,
+      "15 DRPS": 435
+    },
+    "_analysis": {
+      "classes_evaluable_on_target": [
+        5,
+        6
+      ],
+      "classes_with_source_supervision": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        11,
+        12,
+        13,
+        14,
+        15
+      ],
+      "classes_source_only": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        11,
+        12,
+        13,
+        14,
+        15
+      ],
+      "classes_no_supervision_at_all": [
+        7,
+        8,
+        9,
+        10
+      ],
+      "n_classes": 16
+    }
+  },
+  "E_image_sizes": {
+    "rebuilt_benchmark": [
+      "100723252_K58825_F1B05-246_1_21.jpg: (PIL 不可用)",
+      "100725103_K58794_F1B05-244_1_21.jpg: (PIL 不可用)",
+      "100726856_K58759_F1B05-242_1_21.jpg: (PIL 不可用)"
+    ],
+    "Defect_dataset_2": [
+      "IMG_20260728_090349.jpg: (PIL 不可用)",
+      "IMG_20260728_090351.jpg: (PIL 不可用)",
+      "IMG_20260728_090603.jpg: (PIL 不可用)"
+    ],
+    "Normal_dataset": [
+      "102856918_K26447_F1B03-154_1_21.jpg: (PIL 不可用)",
+      "102858416_K26412_F1B03-152_1_21.jpg: (PIL 不可用)",
+      "102859874_K26378_F1B03-150_1_21.jpg: (PIL 不可用)"
+    ]
+  }
+}

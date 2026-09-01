@@ -1,0 +1,601 @@
+{
+  "tiles": {
+    "tiles_workshop": {
+      "exists": true,
+      "n_tiles": 44406,
+      "n_labels": 44406,
+      "label_stats": {
+        "n_label_files": 44406,
+        "n_boxes": 25076,
+        "n_empty_label_files": 19868,
+        "class_hist": {
+          "0": 720,
+          "1": 3960,
+          "2": 2904,
+          "3": 3057,
+          "4": 2484,
+          "5": 1460,
+          "6": 798,
+          "11": 1389,
+          "12": 1984,
+          "13": 2076,
+          "14": 2140,
+          "15": 2104
+        },
+        "boxes_per_image_hist": {
+          "0": 19868,
+          "1": 24000,
+          "2": 538
+        }
+      }
+    },
+    "tiles_workshop_val": {
+      "exists": true,
+      "n_tiles": 3091,
+      "n_labels": 3091,
+      "label_stats": {
+        "n_label_files": 3091,
+        "n_boxes": 1657,
+        "n_empty_label_files": 1502,
+        "class_hist": {
+          "0": 20,
+          "1": 129,
+          "2": 42,
+          "3": 158,
+          "4": 360,
+          "5": 82,
+          "6": 73,
+          "11": 42,
+          "12": 254,
+          "13": 108,
+          "14": 162,
+          "15": 227
+        },
+        "boxes_per_image_hist": {
+          "0": 1502,
+          "1": 1521,
+          "2": 68
+        }
+      }
+    },
+    "tiles_real": {
+      "exists": true,
+      "n_tiles": 13350,
+      "n_labels": 13350,
+      "label_stats": {
+        "n_label_files": 13350,
+        "n_boxes": 608,
+        "n_empty_label_files": 12758,
+        "class_hist": {
+          "5": 315,
+          "6": 293
+        },
+        "boxes_per_image_hist": {
+          "0": 12758,
+          "1": 576,
+          "2": 16
+        }
+      }
+    },
+    "tiles_normal": {
+      "exists": true,
+      "n_tiles": 23025,
+      "n_labels": 23025,
+      "label_stats": {
+        "n_label_files": 23025,
+        "n_boxes": 0,
+        "n_empty_label_files": 23025,
+        "class_hist": {},
+        "boxes_per_image_hist": {
+          "0": 23025
+        }
+      }
+    }
+  },
+  "tiles_index": {
+    "deploy_train.txt": {
+      "type": "txt",
+      "n_lines": 51521
+    },
+    "deploy_val.txt": {
+      "type": "txt",
+      "n_lines": 5016
+    },
+    "real_fold.csv": {
+      "type": ".csv",
+      "size_bytes": 18732
+    },
+    "train2_fold0.txt": {
+      "type": "txt",
+      "n_lines": 28787
+    },
+    "train2_fold1.txt": {
+      "type": "txt",
+      "n_lines": 28840
+    },
+    "train2_fold2.txt": {
+      "type": "txt",
+      "n_lines": 27787
+    },
+    "train2_fold3.txt": {
+      "type": "txt",
+      "n_lines": 30734
+    },
+    "train_a_fold0.txt": {
+      "type": "txt",
+      "n_lines": 39585
+    },
+    "train_a_fold2.txt": {
+      "type": "txt",
+      "n_lines": 38735
+    },
+    "train_fold0.txt": {
+      "type": "txt",
+      "n_lines": 28460
+    },
+    "train_fold1.txt": {
+      "type": "txt",
+      "n_lines": 28510
+    },
+    "train_fold2.txt": {
+      "type": "txt",
+      "n_lines": 27610
+    },
+    "train_fold3.txt": {
+      "type": "txt",
+      "n_lines": 30335
+    },
+    "val_fold0.txt": {
+      "type": "txt",
+      "n_lines": 4491
+    },
+    "val_fold1.txt": {
+      "type": "txt",
+      "n_lines": 4491
+    },
+    "val_fold2.txt": {
+      "type": "txt",
+      "n_lines": 4341
+    },
+    "val_fold3.txt": {
+      "type": "txt",
+      "n_lines": 4816
+    },
+    "workshop_val_whole.txt": {
+      "type": "txt",
+      "n_lines": 551
+    },
+    "workshop_whole_20pct.txt": {
+      "type": "txt",
+      "n_lines": 1556
+    }
+  },
+  "overlap": {
+    "Defect_dataset ∩ Defect_dataset_16_rebuilt": 500,
+    "Defect_dataset ∩ train_data_3_raw": 313,
+    "Defect_dataset ∩ train_data_3_raw_2560": 245,
+    "Defect_dataset_16_rebuilt ∩ train_data_3_raw": 313,
+    "Defect_dataset_16_rebuilt ∩ train_data_3_raw_2560": 245,
+    "Defect_dataset_2 ∩ train_data_2": 3672,
+    "Defect_dataset_2 ∩ train_data_3_raw": 3672,
+    "Defect_dataset_2 ∩ train_data_3_raw_2560": 602,
+    "train_data_2 ∩ train_data_3_raw": 3672,
+    "train_data_2 ∩ train_data_3_raw_2560": 602,
+    "train_data_3_raw ∩ train_data_3_raw_2560": 847
+  },
+  "critical_overlap": {
+    "rebuilt ∩ Normal_dataset": 0,
+    "rebuilt ∩ Defect_dataset": 500,
+    "Defect_dataset ∩ Normal_dataset": 0
+  },
+  "segment_distribution": {
+    "Defect_dataset": {
+      "F1B04": 256,
+      "F1B03": 186,
+      "F1B05": 53,
+      "F1B02": 5
+    },
+    "Defect_dataset_16_rebuilt": {
+      "F1B04": 290,
+      "F1B03": 186,
+      "F1B05": 53,
+      "F1B02": 5
+    },
+    "Normal_dataset": {},
+    "Defect_dataset_2": {
+      "UNKNOWN": 3789
+    },
+    "train_data_2": {
+      "UNKNOWN": 8883
+    }
+  },
+  "fold_check": {
+    "n_rows": 534,
+    "columns": [
+      "image",
+      "fold",
+      "segment",
+      "kpost"
+    ],
+    "per_fold": {
+      "0": 146,
+      "1": 144,
+      "2": 186,
+      "3": 58
+    },
+    "per_fold_segment": {
+      "0": {
+        "F1B04": 146
+      },
+      "1": {
+        "F1B04": 144
+      },
+      "2": {
+        "F1B03": 186
+      },
+      "3": {
+        "F1B05": 53,
+        "F1B02": 5
+      }
+    }
+  },
+  "train_data_2_manifest": {
+    "generated_at": "2026-08-11T01:10:17",
+    "source": "data\\Defect_dataset_2\\Defect_dataset",
+    "output": "data\\train_data_2",
+    "seed": 42,
+    "classes": 16,
+    "config": 9,
+    "source_groups": 3,
+    "group_assignments": 1039,
+    "splits": 3,
+    "excluded": 3,
+    "variant_errors": 0,
+    "variants": 5211,
+    "per_class": 16
+  },
+  "classes_files": {
+    "data\\train_data_2\\classes.txt": [
+      "VHBNM",
+      "VHBNL",
+      "SVHBNM",
+      "SVHBNL",
+      "SVHTNL",
+      "CBHPM",
+      "CBVPM",
+      "RHTBNM",
+      "RHTBNL",
+      "GWCSBNM",
+      "GWCSBNL",
+      "GWCNM",
+      "GWCNL",
+      "BSBM",
+      "INSD",
+      "DRPS"
+    ],
+    "data\\Defect_dataset\\classes.txt": [],
+    "data\\train_data_3_raw\\classes.txt": [
+      "VHBNM",
+      "VHBNL",
+      "SVHBNM",
+      "SVHBNL",
+      "SVHTNL",
+      "CBHPM",
+      "CBVPM",
+      "RHTBNM",
+      "RHTBNL",
+      "GWCSBNM",
+      "GWCSBNL",
+      "GWCNM",
+      "GWCNL",
+      "BSBM",
+      "INSD",
+      "DRPS"
+    ]
+  },
+  "assets": {
+    "Defect_dataset": {
+      "path": "data\\Defect_dataset",
+      "domain": "检测车实拍(目标域)",
+      "n_images": 500,
+      "n_labels": 0,
+      "label_stats": {
+        "n_label_files": 501,
+        "n_boxes": 1381,
+        "n_empty_label_files": 1,
+        "class_hist": {
+          "0": 267,
+          "1": 171,
+          "2": 301,
+          "3": 97,
+          "4": 207,
+          "5": 193,
+          "6": 145
+        },
+        "boxes_per_image_hist": {
+          "0": 1,
+          "1": 18,
+          "2": 102,
+          "3": 361,
+          "4": 19
+        }
+      }
+    },
+    "Defect_dataset_16_rebuilt": {
+      "path": "data\\Defect_dataset_16_rebuilt",
+      "domain": "检测车实拍(目标域) 重建外部基准",
+      "n_images": 534,
+      "n_labels": 0,
+      "label_stats": {
+        "n_label_files": 534,
+        "n_boxes": 376,
+        "n_empty_label_files": 189,
+        "class_hist": {
+          "5": 204,
+          "6": 172
+        },
+        "boxes_per_image_hist": {
+          "0": 189,
+          "1": 314,
+          "2": 31
+        }
+      }
+    },
+    "Defect_dataset_2": {
+      "path": "data\\Defect_dataset_2\\Defect_dataset",
+      "domain": "车间静态拍摄(源域)",
+      "n_images": 3789,
+      "n_labels": 0,
+      "label_stats": {
+        "n_label_files": 3718,
+        "n_boxes": 3837,
+        "n_empty_label_files": 65,
+        "class_hist": {
+          "0": 87,
+          "1": 551,
+          "2": 190,
+          "3": 402,
+          "4": 544,
+          "5": 103,
+          "6": 328,
+          "7": 3,
+          "8": 7,
+          "9": 3,
+          "10": 5,
+          "11": 189,
+          "12": 589,
+          "13": 201,
+          "14": 200,
+          "15": 435
+        },
+        "boxes_per_image_hist": {
+          "0": 65,
+          "1": 3489,
+          "2": 144,
+          "3": 20
+        }
+      }
+    },
+    "Normal_dataset": {
+      "path": "data\\Normal_dataset",
+      "domain": "检测车实拍(目标域) 无缺陷",
+      "n_images": 0,
+      "n_labels": 0,
+      "label_stats": {
+        "n_label_files": 0,
+        "n_boxes": 0,
+        "n_empty_label_files": 0,
+        "class_hist": {},
+        "boxes_per_image_hist": {}
+      }
+    },
+    "train_data_2": {
+      "path": "data\\train_data_2",
+      "domain": "车间(源域) 构建训练集",
+      "splits": {
+        "train": {
+          "n_images": 7781,
+          "n_labels": 0,
+          "label_stats": {
+            "n_label_files": 7781,
+            "n_boxes": 7896,
+            "n_empty_label_files": 105,
+            "class_hist": {
+              "0": 340,
+              "1": 1660,
+              "2": 664,
+              "3": 771,
+              "4": 708,
+              "5": 370,
+              "6": 555,
+              "11": 486,
+              "12": 784,
+              "13": 486,
+              "14": 504,
+              "15": 568
+            },
+            "boxes_per_image_hist": {
+              "0": 105,
+              "1": 7476,
+              "2": 180,
+              "3": 20
+            }
+          }
+        },
+        "val": {
+          "n_images": 551,
+          "n_labels": 0,
+          "label_stats": {
+            "n_label_files": 551,
+            "n_boxes": 561,
+            "n_empty_label_files": 26,
+            "class_hist": {
+              "0": 8,
+              "1": 61,
+              "2": 10,
+              "3": 45,
+              "4": 109,
+              "5": 22,
+              "6": 54,
+              "11": 12,
+              "12": 102,
+              "13": 27,
+              "14": 41,
+              "15": 70
+            },
+            "boxes_per_image_hist": {
+              "0": 26,
+              "1": 499,
+              "2": 16,
+              "3": 10
+            }
+          }
+        },
+        "test": {
+          "n_images": 551,
+          "n_labels": 0,
+          "label_stats": {
+            "n_label_files": 551,
+            "n_boxes": 586,
+            "n_empty_label_files": 3,
+            "class_hist": {
+              "0": 8,
+              "1": 70,
+              "2": 12,
+              "3": 93,
+              "4": 81,
+              "5": 7,
+              "6": 89,
+              "11": 12,
+              "12": 92,
+              "13": 8,
+              "14": 33,
+              "15": 81
+            },
+            "boxes_per_image_hist": {
+              "0": 3,
+              "1": 510,
+              "2": 38
+            }
+          }
+        }
+      }
+    },
+    "train_data_3_raw": {
+      "path": "data\\train_data_3_raw",
+      "domain": "车间(源域) 构建训练集",
+      "splits": {
+        "train": {
+          "n_images": 2815,
+          "n_labels": 0,
+          "label_stats": {
+            "n_label_files": 2815,
+            "n_boxes": 2908,
+            "n_empty_label_files": 35,
+            "class_hist": {
+              "0": 68,
+              "1": 415,
+              "2": 166,
+              "3": 257,
+              "4": 354,
+              "5": 222,
+              "6": 300,
+              "11": 162,
+              "12": 392,
+              "13": 162,
+              "14": 126,
+              "15": 284
+            },
+            "boxes_per_image_hist": {
+              "0": 35,
+              "1": 2662,
+              "2": 108,
+              "3": 10
+            }
+          }
+        },
+        "val": {
+          "n_images": 619,
+          "n_labels": 0,
+          "label_stats": {
+            "n_label_files": 619,
+            "n_boxes": 636,
+            "n_empty_label_files": 26,
+            "class_hist": {
+              "0": 8,
+              "1": 61,
+              "2": 10,
+              "3": 45,
+              "4": 109,
+              "5": 67,
+              "6": 84,
+              "11": 12,
+              "12": 102,
+              "13": 27,
+              "14": 41,
+              "15": 70
+            },
+            "boxes_per_image_hist": {
+              "0": 26,
+              "1": 560,
+              "2": 23,
+              "3": 10
+            }
+          }
+        },
+        "test": {
+          "n_images": 551,
+          "n_labels": 0,
+          "label_stats": {
+            "n_label_files": 551,
+            "n_boxes": 586,
+            "n_empty_label_files": 3,
+            "class_hist": {
+              "0": 8,
+              "1": 70,
+              "2": 12,
+              "3": 93,
+              "4": 81,
+              "5": 7,
+              "6": 89,
+              "11": 12,
+              "12": 92,
+              "13": 8,
+              "14": 33,
+              "15": 81
+            },
+            "boxes_per_image_hist": {
+              "0": 3,
+              "1": 510,
+              "2": 38
+            }
+          }
+        }
+      }
+    },
+    "train_data_3_raw_2560": {
+      "path": "data\\train_data_3_raw_2560",
+      "domain": "车间(源域) 构建训练集",
+      "splits": {
+        "train": {
+          "n_images": 847,
+          "n_labels": 0,
+          "label_stats": null
+        }
+      }
+    },
+    "normal_field_v1_sample": {
+      "path": "data\\normal_field_v1_sample",
+      "domain": "检测车实拍(目标域) 无缺陷切片样本",
+      "n_images": 0,
+      "n_labels": 0,
+      "label_stats": {
+        "n_label_files": 0,
+        "n_boxes": 0,
+        "n_empty_label_files": 0,
+        "class_hist": {},
+        "boxes_per_image_hist": {}
+      }
+    }
+  }
+}
