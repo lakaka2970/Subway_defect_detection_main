@@ -1,8 +1,0 @@
-# 现场无缺陷负样本 v1 —— 目标域负样本 / 缺陷合成底图
-# 标签全部为空文件 = 纯负样本
-path: /root/autodl-tmp/subway/out/normal_field_v1
-train: images/train
-val: images/val
-
-nc: 16
-names: ["VHBNM", "VHBNL", "SVHBNM", "SVHBNL", "SVHTNL", "CBHPM", "CBVPM", "RHTBNM", "RHTBNL", "GWCSBNM", "GWCSBNL", "GWCNM", "GWCNL", "BSBM", "INSD", "DRPS"]
